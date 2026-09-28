@@ -1,0 +1,1209 @@
+format: tdxn
+version: '2.1'
+build: 1
+generator: Embody/6.2.59
+td_build: 099.2025.32280
+network_path: /project1/ProjectorScanner
+options:
+  include_dat_content: false
+  include_storage: true
+type_defaults:
+  panelexecuteDAT:
+    parameters:
+      fromop: =parent()
+  parameterexecuteDAT:
+    parameters:
+      fromop: =parent()
+      op: ..
+    flags:
+    - viewer
+  tableDAT:
+    size: [130, 90]
+    color: [0.67, 0.67, 0.67]
+    tags:
+    - tdxn_exclude:dat_content
+  textDAT:
+    color: [0.67, 0.67, 0.67]
+type: baseCOMP
+custom_pars:
+  Discovery:
+  - name: Scannow
+    style: Pulse
+    label: Scan Now
+    help: Sweep the subnet now and list every PJLink projector found.
+  - name: Subnet
+    style: Str
+    label: Subnet Override
+    startSection: true
+    help: First three octets to scan, e.g. '192.168.50'. Leave blank to auto-detect this machine's own /24 subnet.
+    value: 192.168.50
+  - name: Port
+    style: Int
+    label: PJLink Port
+    default: 4352
+    min: 1.0
+    max: 65535.0
+    clampMin: true
+    clampMax: true
+    help: PJLink TCP port. Standard is 4352; change only for a nonstandard install.
+  - name: Timeoutms
+    style: Int
+    label: Per-Host Timeout (ms)
+    default: 350
+    min: 50.0
+    max: 5000.0
+    clampMin: true
+    normMin: 100.0
+    normMax: 1000.0
+    help: Connect/read timeout per host during a scan, in milliseconds. Higher catches slow devices.
+    value: 800
+  - name: Concurrency
+    style: Int
+    label: Parallel Probes
+    default: 64
+    min: 1.0
+    max: 256.0
+    clampMin: true
+    clampMax: true
+    normMin: 1.0
+    normMax: 128.0
+    help: How many hosts are probed at once during a scan. 64 sweeps a /24 in a few seconds.
+  - name: Status
+    style: Str
+    startSection: true
+    readOnly: true
+    help: Live scan/power progress and result summary (read-only).
+  - name: Password
+    style: Str
+    label: PJLink Password
+    help: Control password if the projector requires PJLink authentication (PJLINK 1). Leave blank for none.
+  - name: Autorefresh
+    style: Toggle
+    label: Auto-Refresh Power
+    startSection: true
+    default: true
+    help: Periodically re-query power state so the list reflects changes made outside this panel (e.g. the projector switched off at the unit).
+  - name: Refreshsecs
+    style: Int
+    label: Refresh Interval (s)
+    default: 15
+    min: 3.0
+    max: 300.0
+    clampMin: true
+    normMin: 5.0
+    normMax: 60.0
+    help: Seconds between automatic power-state refreshes.
+  - name: Lampsecs
+    style: Int
+    label: Lamp Refresh (s)
+    default: 300
+    min: 30.0
+    max: 3600.0
+    clampMin: true
+    normMin: 60.0
+    normMax: 900.0
+    help: Seconds between automatic lamp-hour refreshes. Lamp hours change slowly, so keep this longer than the power refresh.
+parameters:
+  parentshortcut: ProjectorScanner
+  opviewer: ./ui
+sequences:
+  ext:
+  - object: op('./ProjectorScannerExt').module.ProjectorScannerExt(me)
+    name: ProjectorScanner
+    promote: true
+flags:
+- viewer
+color: [0.3, 0.5, 0.9]
+tags:
+- tdxn
+- tdxn_exclude:Status
+comment: PJLink projector discovery
+operators:
+- name: ui
+  type: containerCOMP
+  parameters:
+    w: 700
+    h: 320
+    resizecomp: =me
+    repocomp: =me
+    bgcolorr: 0.09
+    bgcolorg: 0.1
+    bgcolorb: 0.12
+    bgalpha: 1
+    spacing: 2
+  position: [380, -210]
+  size: [160, 130]
+  color: [0.67, 0.67, 0.67]
+  children:
+  - name: ip_list
+    type: listCOMP
+    parameters:
+      callbacks: ip_list_callbacks
+      rows: 2
+      cols: 6
+      lockfirstrow: true
+      hmode: fill
+      vmode: anchors
+      topoffset: -38
+      alignorder: 1
+      resizecomp: =me
+      repocomp: =me
+    position: [240, 200]
+    size: [160, 130]
+    color: [0.67, 0.67, 0.67]
+  - name: btn_exec
+    type: panelexecuteDAT
+    parameters:
+      panels: scan_btn
+    position: [520, 0]
+    size: [130, 90]
+    color: [0.67, 0.67, 0.67]
+    dat_content: |
+      # Scan button handler: a press starts a subnet sweep via the extension.
+
+      def onOffToOn(panelValue):
+          parent.ProjectorScanner.Scan()
+          return
+    dat_content_format: text
+  - name: scan_btn
+    type: buttonCOMP
+    parameters:
+      label: Scan
+      buttontype: momentary
+      fontsize: 14
+      colorr: 0.92
+      colorg: 0.94
+      colorb: 0.98
+      h: 34
+      hmode: fill
+      vmode: anchors
+      bottomanchor: 1
+      bottomoffset: -36
+      resizecomp: =me
+      repocomp: =me
+      bgcolorr: 0.18
+      bgcolorg: 0.22
+      bgcolorb: 0.3
+      dodisablecolor: true
+      disablecolorr: 0.12
+      disablecolorg: 0.13
+      disablecolorb: 0.15
+      disablealpha: 0.8
+      clone: =op.TDTox.op('defaultCOMPs/button')
+    position: [520, 200]
+    size: [160, 134]
+    children:
+    - name: out1
+      type: outCHOP
+      parameters:
+        label: =me.name
+        autoexportroot: =parent()
+      flags:
+      - viewer
+      position: [275, 175]
+      size: [130, 90]
+      inputs:
+      - par1
+    - name: par1
+      type: parameterCHOP
+      parameters:
+        parameters: value0
+        custom: false
+        builtin: true
+        renameto: v1
+        autoexportroot: =parent()
+      flags:
+      - viewer
+      position: [65, 175]
+      size: [130, 90]
+    - name: text
+      type: textCOMP
+      parameters:
+        text: =parent().par.label
+        type: multiline
+        legacyfontselection: true
+        scaletofit: =parent().par[me.curPar.name] or me.curPar.val
+        fontsize: =parent().par[me.curPar.name] or me.curPar.val
+        linespacing: =parent().par[me.curPar.name] or me.curPar.val
+        fontcolorr: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorr + .5
+        fontcolorg: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorg + .5
+        fontcolorb: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorb + .5
+        textpaddingl: =parent().par[me.curPar.name] or me.curPar.val
+        textpaddingr: =parent().par[me.curPar.name] or me.curPar.val
+        textpaddingb: =parent().par[me.curPar.name] or me.curPar.val
+        textpaddingt: =parent().par[me.curPar.name] or me.curPar.val
+        hmode: fill
+        vmode: fill
+        clickthrough: true
+        resizecomp: =me
+        repocomp: =me
+        bgcolorr: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorr + r * 0.1
+        bgcolorg: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorg + r * 0.1
+        bgcolorb: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorb + r * 0.1
+        bgalpha: 1
+        borderar: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorr + .2
+        borderag: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorg + .2
+        borderab: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorb + .2
+        leftborder: bordera
+        rightborder: bordera
+        bottomborder: bordera
+        topborder: bordera
+        borderover: false
+      flags:
+      - viewer
+      position: [74, 26]
+      size: [113, 96]
+    - name: parexec1
+      type: parameterexecuteDAT
+      parameters:
+        pars: value0
+        onpulse: false
+        defaultreadencoding: cp1252
+        loadonstart: true
+      position: [66, -83]
+      size: [128, 66]
+      dat_content: "# par - the Par object that has changed\n# prev - the previous value\n\ndef onValueChange(par, prev):\n\tif not parent().panel.select :\n\t\tparent().panel.state = par.eval()\n\treturn"
+      dat_content_format: text
+    - name: panelexec1
+      type: panelexecuteDAT
+      parameters:
+        panels: =parent()
+        panelvalue: state
+        offtoon: false
+        valuechange: true
+        defaultreadencoding: cp1252
+        loadonstart: true
+      flags:
+      - viewer
+      position: [247, -81]
+      size: [126, 62]
+      dat_content: "# panelValue - the PanelValue object that changed\n# Make sure the corresponding toggle is enabled in the Panel Execute DAT.\n\ndef onValueChange(panelValue):\n\tparent().par.value0 = panelValue\n\treturn"
+      dat_content_format: text
+  - name: ip_display
+    type: tableDAT
+    position: [0, 200]
+  - name: ip_list_callbacks
+    type: textDAT
+    parameters:
+      language: python
+    flags:
+    - viewer
+    - -showDocked
+    position: [240, 40]
+    size: [160, 130]
+    dock: ip_list
+    dat_content: |
+      # List COMP callbacks. Two columns from ../ip_display:
+      #   col 0 = power toggle button (ON/OFF/COOL/WARM/? , or '...' while busy)
+      #   col 1 = IP Address
+      # Row 0 is the styled header. Data rows have zebra striping + rollover highlight.
+      # A '...' power cell is a command in flight -- greyed and not clickable.
+
+      def onInitCell(comp, row, col, attribs):
+          src = comp.op('../ip_display')
+          text = ''
+          if src is not None and row < src.numRows and col < src.numCols:
+              text = src[row, col].val
+          attribs.text = text
+          attribs.rowHeight = 28
+          attribs.textJustify = JustifyType.CENTER if col == 0 else JustifyType.CENTERLEFT
+          attribs.textOffsetX = 0 if col == 0 else 12
+
+          if row == 0:
+              attribs.bgColor = [0.16, 0.17, 0.22, 1.0]
+              attribs.textColor = [0.86, 0.90, 0.98, 1.0]
+              attribs.fontBold = True
+              return
+
+          if col == 0:
+              state = text.upper()
+              if text == '...':                       # command in flight -- busy
+                  attribs.bgColor = [0.18, 0.19, 0.22, 1.0]
+                  attribs.textColor = [0.60, 0.62, 0.68, 1.0]
+              elif text == 'OFF?':                     # awaiting OFF confirmation
+                  attribs.bgColor = [0.55, 0.33, 0.06, 1.0]
+                  attribs.textColor = [1.0, 0.96, 0.86, 1.0]
+              elif state == 'ON':
+                  attribs.bgColor = [0.12, 0.42, 0.20, 1.0]
+                  attribs.textColor = [0.85, 1.0, 0.88, 1.0]
+              elif state == 'OFF':
+                  attribs.bgColor = [0.42, 0.14, 0.16, 1.0]
+                  attribs.textColor = [1.0, 0.86, 0.86, 1.0]
+              elif state in ('COOL', 'WARM'):
+                  attribs.bgColor = [0.42, 0.34, 0.10, 1.0]
+                  attribs.textColor = [1.0, 0.95, 0.80, 1.0]
+              else:
+                  attribs.bgColor = [0.20, 0.21, 0.25, 1.0]
+                  attribs.textColor = [0.72, 0.74, 0.80, 1.0]
+              attribs.fontBold = True
+              if attribs.rollover and text != '...':
+                  bg = attribs.bgColor
+                  attribs.bgColor = [min(1.0, bg[0] + 0.10), min(1.0, bg[1] + 0.10),
+                                     min(1.0, bg[2] + 0.10), 1.0]
+              return
+
+          # IP Address column
+          attribs.textColor = [0.90, 0.95, 1.0, 1.0]
+          attribs.bgColor = [0.115, 0.125, 0.150, 1.0] if row % 2 else [0.140, 0.150, 0.180, 1.0]
+          if attribs.rollover:
+              attribs.bgColor = [0.20, 0.26, 0.36, 1.0]
+          return
+
+
+      def onInitCol(comp, col, attribs):
+          fixed = {0: 56, 1: 120, 2: 120, 3: 84, 5: 80}   # Power, IP, Name, Maker, Lamp Hrs
+          if col in fixed:
+              attribs.colWidth = fixed[col]
+          else:                                            # col 4 = Unit (model) -- stretches
+              attribs.colWidth = 150
+              try:
+                  attribs.colStretch = True
+              except Exception:
+                  pass
+          return
+
+
+      def onSelect(comp, startRow, startCol, startCoords, endRow, endCol, endCoords, start, end):
+          # click a power cell (col 0, data row) to toggle that projector's power.
+          # The extension ignores the click if that projector already has a command in
+          # flight or a scan is running, so no extra guard is needed here.
+          if startRow == endRow and startCol == endCol and startRow > 0 and startCol == 0:
+              src = comp.op('../ip_display')
+              if src is not None and startRow < src.numRows:
+                  ip = src[startRow, 1].val
+                  if ip:
+                      parent.ProjectorScanner.ext.ProjectorScanner.TogglePower(ip)
+          return
+    dat_content_format: text
+- name: tcpip1
+  type: tcpipDAT
+  parameters:
+    active: false
+    address: 192.168.50.190
+    port: 4352
+    callbacks: tcpip1_callbacks
+    fromop: =parent()
+  flags:
+  - viewer
+  position: [925, 100]
+  size: [130, 90]
+  color: [0.67, 0.67, 0.67]
+  dat_read_only: true
+- name: parexec
+  type: parameterexecuteDAT
+  parameters:
+    pars: '*'
+    valuechange: false
+    builtin: false
+  position: [200, 0]
+  size: [130, 90]
+  color: [0.67, 0.67, 0.67]
+  dat_content: |
+    # Routes custom-parameter pulses on the ProjectorScanner COMP to the extension.
+    # One dispatcher, not one promoted method per parameter: a pulse on 'Scannow'
+    # calls the extension's _onScannowPulse handler.
+
+    def onPulse(par):
+        comp = par.owner
+        ext = comp.ext.ProjectorScanner
+        handler = getattr(ext, '_on%sPulse' % par.name, None)
+        if handler is None:
+            return
+        try:
+            handler(par)
+        except Exception as e:
+            debug('ProjectorScanner: pulse handler for %s failed: %s' % (par.name, e))
+        return
+  dat_content_format: text
+- name: execScan
+  type: executeDAT
+  parameters:
+    fromop: =parent()
+  flags:
+  - viewer
+  position: [200, -200]
+  size: [130, 90]
+  color: [0.67, 0.67, 0.67]
+  dat_content: |
+    # Per-frame drain for the background subnet scan. The extension arms this
+    # (Frame Start on) only while a scan is running and disarms it when finished,
+    # so there is no idle per-frame cost.
+
+    def onFrameStart(frame):
+        parent().ext.ProjectorScanner.pumpResults()
+        return
+  dat_content_format: text
+- name: projectors
+  type: tableDAT
+  position: [620, 200]
+- name: scan_results
+  type: tableDAT
+  position: [620, 0]
+- name: refresh_timer
+  type: timerCHOP
+  parameters:
+    length: =parent.ProjectorScanner.par.Refreshsecs
+    cycle: true
+    cyclelimit: false
+    callbacks: refresh_timer_callbacks
+    exttcop: =tdu.Timecode()
+    rate: =me.time.rate
+    autoexportroot: =parent()
+  position: [200, -440]
+  size: [130, 90]
+  color: [0.67, 0.67, 0.67]
+- name: tcpip1_callbacks
+  type: textDAT
+  parameters:
+    language: python
+  flags:
+  - bypass
+  - viewer
+  - -showDocked
+  position: [925, -20]
+  size: [130, 90]
+  dock: tcpip1
+  dat_content: |
+    # tcpip1 is not used for PJLink commands -- power control uses reliable
+    # background-socket transactions in ProjectorScannerExt (PJLink allows only one
+    # connection at a time and the TCP/IP DAT's reconnect churn breaks that).
+    # These stubs are kept so the DAT never raises if it is ever activated.
+
+    def onConnect(dat, peer):
+        return
+
+    def onReceive(dat, rowIndex, message, byteData, peer):
+        return
+
+    def onClose(dat, peer):
+        return
+  dat_content_format: text
+- name: ProjectorScannerExt
+  type: textDAT
+  flags:
+  - viewer
+  position: [200, 200]
+  size: [130, 90]
+  dat_content: |
+    from __future__ import annotations
+    import socket
+    import threading
+    import queue
+    import time
+    import hashlib
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from typing import Optional, List, Dict
+
+    # PJLink %1POWR status codes -> short UI labels.
+    POWER_LABEL = {'1': 'ON', '0': 'OFF', '2': 'COOL', '3': 'WARM', '?': '?', 'ERR': 'ERR'}
+
+    # OFF-confirm window and COOL/WARM transition-poll cadence.
+    CONFIRM_S = 3.0        # seconds to click again to confirm a power-OFF
+    CONFIRM_FRAMES = 180   # ~3s at 60fps -- auto-disarm the confirm prompt
+    POLL_FRAMES = 300      # ~5s between COOL/WARM re-queries
+    POLL_MAX = 60          # stop transition polling after ~5 min
+
+
+    class ProjectorScannerExt:
+        """Discover PJLink projectors on the local /24 and control their power.
+
+        DISCOVERY: a projector speaking PJLink listens on TCP 4352 and, the instant a
+        client connects, sends 'PJLINK 0' (no auth) or 'PJLINK 1 <seed>' (auth). The
+        254-host sweep is blocking socket work, so it runs on a background worker
+        thread that touches ZERO TouchDesigner objects and hands data back to a
+        main-thread drain (pumpResults).
+
+        POWER: PJLink allows ONE connection at a time and expects a tight
+        connect -> banner -> command -> reply -> close sequence. So power commands run
+        as serialized background-socket transactions (one shared lock => one live
+        connection ever) and report back through the same main-thread drain. The
+        TCP/IP DAT is deliberately NOT used here: its frame-delayed callbacks and
+        auto-reconnect churn the projector's single connection slot."""
+
+        def __init__(self, ownerComp: COMP) -> None:
+            self.ownerComp = ownerComp
+            # discovery worker plumbing
+            self._resultQ: "queue.Queue" = queue.Queue()
+            self._progressQ: "queue.Queue" = queue.Queue()
+            self._thread: Optional[threading.Thread] = None
+            self._scanning: bool = False
+            self._total: int = 0
+            self._done: int = 0
+            # power control plumbing
+            self._power: Dict[str, str] = {}             # ip -> PJLink POWR code
+            self._powerResultQ: "queue.Queue" = queue.Queue()
+            self._pjPending: int = 0                     # in-flight power jobs
+            self._pjLock = threading.Lock()              # one PJLink connection at a time
+            self._toggleGuard: Dict[str, float] = {}     # ip -> last toggle monotonic
+            self._pjBusyIps = set()                      # ips with a power command in flight
+            self._confirmOff: Dict[str, float] = {}      # ip -> OFF-confirm armed monotonic
+            self._pollCount: Dict[str, int] = {}         # ip -> COOL/WARM poll count
+            self._model: Dict[str, str] = {}             # ip -> model / product name
+            self._maker: Dict[str, str] = {}             # ip -> manufacturer name
+            self._name: Dict[str, str] = {}              # ip -> user-set projector name
+            self._lamp: Dict[str, str] = {}              # ip -> lamp hour count(s)
+            self._lastLampRefresh: float = 0.0           # monotonic of last lamp-hours poll
+
+        # ---- lifecycle ----------------------------------------------------------
+
+        def onInitTD(self) -> None:
+            self._ensurePars()
+            if not self._scanning and self._pjPending <= 0:
+                self._disarmDrain()
+            dat = self.ownerComp.op('tcpip1')
+            if dat is not None:
+                try:
+                    dat.par.active = False   # not used for commands; keep it quiet
+                except Exception:
+                    pass
+            self._refreshIpDisplay()
+            self._ensureUi()
+            self._updateUiState()
+            run(self._startTimer, delayFrames=15)   # auto-start the refresh timer
+
+        def onDestroyTD(self) -> None:
+            self._disarmDrain()
+
+        # ---- parameter provisioning (get-or-create) -----------------------------
+
+        def _ensurePars(self) -> None:
+            comp = self.ownerComp
+            page = None
+            for p in comp.customPages:
+                if p.name == 'Discovery':
+                    page = p
+                    break
+            if page is None:
+                page = comp.appendCustomPage('Discovery')
+
+            def ensure(name: str, style: str, **attrs):
+                found = [p for p in comp.customPars if p.tupletName == name]
+                created = False
+                if not found:
+                    getattr(page, 'append' + style)(name)
+                    found = [p for p in comp.customPars if p.tupletName == name]
+                    created = True
+                for p in found:
+                    for k, v in attrs.items():
+                        if k not in ('val', 'expr', 'bindExpr', 'mode', 'export'):
+                            setattr(p, k, v)
+                return found[0], created
+
+            ensure('Scannow', 'Pulse', label='Scan Now',
+                   help='Sweep the subnet now and list every PJLink projector found.')
+
+            p, new = ensure('Subnet', 'Str', label='Subnet Override',
+                            help="First three octets to scan, e.g. '192.168.50'. Leave "
+                                 "blank to auto-detect this machine's own /24 subnet.")
+            if new:
+                p.startSection = True
+
+            p, new = ensure('Port', 'Int', label='PJLink Port',
+                            help='PJLink TCP port. Standard is 4352; change only for a '
+                                 'nonstandard install.')
+            if new:
+                p.default = 4352
+                p.min = 1
+                p.max = 65535
+                p.clampMin = True
+                p.clampMax = True
+                p.val = 4352
+
+            p, new = ensure('Password', 'Str', label='PJLink Password',
+                            help='Control password if the projector requires PJLink '
+                                 'authentication (PJLINK 1). Leave blank for none.')
+
+            p, new = ensure('Timeoutms', 'Int', label='Per-Host Timeout (ms)',
+                            help='Connect/read timeout per host during a scan, in '
+                                 'milliseconds. Higher catches slow devices.')
+            if new:
+                p.default = 350
+                p.min = 50
+                p.max = 5000
+                p.clampMin = True
+                p.normMin = 100
+                p.normMax = 1000
+                p.val = 350
+
+            p, new = ensure('Concurrency', 'Int', label='Parallel Probes',
+                            help='How many hosts are probed at once during a scan. 64 '
+                                 'sweeps a /24 in a few seconds.')
+            if new:
+                p.default = 64
+                p.min = 1
+                p.max = 256
+                p.clampMin = True
+                p.clampMax = True
+                p.normMin = 1
+                p.normMax = 128
+                p.val = 64
+
+            p, new = ensure('Autorefresh', 'Toggle', label='Auto-Refresh Power',
+                            help='Periodically re-query power state so the list reflects '
+                                 'changes made outside this panel (e.g. the projector '
+                                 'switched off at the unit).')
+            if new:
+                p.startSection = True
+                p.default = 1
+                p.val = 1
+
+            p, new = ensure('Refreshsecs', 'Int', label='Refresh Interval (s)',
+                            help='Seconds between automatic power-state refreshes.')
+            if new:
+                p.default = 15
+                p.min = 3
+                p.max = 300
+                p.clampMin = True
+                p.normMin = 5
+                p.normMax = 60
+                p.val = 15
+
+            p, new = ensure('Lampsecs', 'Int', label='Lamp Refresh (s)',
+                            help='Seconds between automatic lamp-hour refreshes. Lamp hours change slowly, so keep this longer than the power refresh.')
+            if new:
+                p.default = 300
+                p.min = 30
+                p.max = 3600
+                p.clampMin = True
+                p.normMin = 60
+                p.normMax = 900
+                p.val = 300
+
+            p, new = ensure('Status', 'Str', label='Status',
+                            help='Live scan/power progress and result summary (read-only).')
+            p.readOnly = True
+            if new:
+                p.startSection = True
+                p.val = 'Idle. Press Scan Now.'
+
+        # ---- drain arming (shared by discovery + power) -------------------------
+
+        def _armDrain(self) -> None:
+            ex = self.ownerComp.op('execScan')
+            if ex is not None:
+                ex.par.active = True
+                ex.par.framestart = True
+
+        def _disarmDrain(self) -> None:
+            ex = self.ownerComp.op('execScan')
+            if ex is not None:
+                ex.par.framestart = False
+
+        def _ensureUi(self) -> None:
+            """One-time UI look setup: the Scan button greys when disabled."""
+            btn = self.ownerComp.op('ui/scan_btn')
+            if btn is not None:
+                try:
+                    btn.par.dodisablecolor = True
+                    btn.par.disablecolorr = 0.12
+                    btn.par.disablecolorg = 0.13
+                    btn.par.disablecolorb = 0.15
+                    btn.par.disablealpha = 0.80
+                except Exception:
+                    pass
+
+        def _updateUiState(self) -> None:
+            """Reflect busy state on the Scan button via opacity + label. The button
+            stays ENABLED -- disabling it (enable=0) makes the button's own internal
+            PanelValue sync raise 'PanelValue is disabled'. Clicks while busy are
+            refused by Scan()/TogglePower(), so no functional gate is lost."""
+            btn = self.ownerComp.op('ui/scan_btn')
+            if btn is not None:
+                try:
+                    btn.par.enable = 1
+                    if self._scanning:
+                        btn.par.opacity = 0.5
+                        btn.par.label = 'Scanning...'
+                    elif self._pjPending > 0:
+                        btn.par.opacity = 0.5
+                        btn.par.label = 'Working...'
+                    else:
+                        btn.par.opacity = 1.0
+                        btn.par.label = 'Scan'
+                except Exception:
+                    pass
+
+        def _startTimer(self) -> None:
+            """Start the auto-refresh timer (free-runs; _autoRefresh gates on the toggle)."""
+            t = self.ownerComp.op('refresh_timer')
+            if t is not None:
+                try:
+                    t.par.start.pulse()
+                except Exception:
+                    pass
+
+        def _setStatus(self, text: str) -> None:
+            self.ownerComp.par.Status = text
+
+        def _hostList(self) -> List[str]:
+            override = str(self.ownerComp.par.Subnet.eval()).strip()
+            if override:
+                base = override.rstrip('.')
+            else:
+                base = '.'.join(self._localIp().split('.')[:3])
+            return ['%s.%d' % (base, i) for i in range(1, 255)]
+
+        def _localIp(self) -> str:
+            ip = '127.0.0.1'
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.settimeout(0.2)
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
+            except Exception:
+                pass
+            finally:
+                s.close()
+            return ip
+
+        # ---- parameter callbacks (reached by the parexec dispatcher) ------------
+
+        def _onScannowPulse(self, par) -> None:
+            self.Scan()
+
+        # ---- discovery public API -----------------------------------------------
+
+        def Scan(self) -> None:
+            """Start an asynchronous subnet sweep for PJLink projectors."""
+            if self._scanning:
+                self._setStatus('A scan is already running -- please wait.')
+                return
+            if self._pjPending > 0:
+                self._setStatus('A power command is in progress -- try again in a moment.')
+                return
+            hosts = self._hostList()
+            port = int(self.ownerComp.par.Port.eval())
+            timeout_s = max(0.05, int(self.ownerComp.par.Timeoutms.eval()) / 1000.0)
+            conc = max(1, int(self.ownerComp.par.Concurrency.eval()))
+            self._resultQ = queue.Queue()
+            self._progressQ = queue.Queue()
+            self._total = len(hosts)
+            self._done = 0
+            self._scanning = True
+            base = hosts[0].rsplit('.', 1)[0] if hosts else '?'
+            self._setStatus('Scanning %s.1-254 on port %d ...' % (base, port))
+            self._resetTables()
+            self._armDrain()
+            self._thread = threading.Thread(
+                target=ProjectorScannerExt._probeWorker,
+                args=(hosts, port, timeout_s, conc, self._resultQ, self._progressQ),
+                daemon=True)
+            self._thread.start()
+            self._updateUiState()
+
+        @staticmethod
+        def _probeWorker(hosts, port, timeout_s, conc, resultQ, progressQ) -> None:
+            def probe(ip):
+                try:
+                    s = socket.create_connection((ip, port), timeout=timeout_s)
+                except Exception:
+                    return None
+                banner = ''
+                try:
+                    s.settimeout(timeout_s)
+                    banner = s.recv(64).decode('ascii', 'replace').strip()
+                except Exception:
+                    banner = ''
+                finally:
+                    try:
+                        s.close()
+                    except Exception:
+                        pass
+                is_proj = banner.upper().startswith('PJLINK')
+                auth, seed = '', ''
+                if is_proj:
+                    parts = banner.split()
+                    if len(parts) >= 2:
+                        auth = parts[1]
+                    if len(parts) >= 3:
+                        seed = parts[2]
+                return {'ip': ip, 'banner': banner, 'is_projector': is_proj,
+                        'auth': auth, 'seed': seed}
+
+            results = []
+            try:
+                with ThreadPoolExecutor(max_workers=conc) as ex:
+                    futs = [ex.submit(probe, ip) for ip in hosts]
+                    for f in as_completed(futs):
+                        progressQ.put(1)
+                        r = f.result()
+                        if r is not None:
+                            results.append(r)
+            except Exception as e:
+                resultQ.put(('ERROR', str(e)))
+                return
+            resultQ.put(('DONE', results))
+
+        # ---- power control public API -------------------------------------------
+
+        def SetPower(self, ip: str, on: bool) -> None:
+            """Turn a projector on (True) or to standby (False), then confirm state."""
+            if self._scanning:
+                self._setStatus('A scan is in progress -- wait before controlling power.')
+                return
+            self._startPj(ip, '%1POWR 1' if on else '%1POWR 0', 'power')
+
+        def TogglePower(self, ip: str) -> None:
+            """Toggle a projector. Turning OFF needs a confirm (click again within a
+            few seconds); COOL/WARM transitions are ignored until they settle."""
+            if self._scanning:
+                self._setStatus('A scan is in progress -- please wait.')
+                return
+            if ip in self._pjBusyIps:
+                return                                       # a command is already in flight
+            now = time.monotonic()
+            if now - self._toggleGuard.get(ip, 0.0) < 0.5:   # debounce held clicks
+                return
+            self._toggleGuard[ip] = now
+            cur = self._power.get(ip, '?')
+            if cur == '2':
+                self._setStatus('Projector %s is cooling down -- please wait.' % ip)
+                return
+            if cur == '3':
+                self._setStatus('Projector %s is warming up -- please wait.' % ip)
+                return
+            if cur == '1':
+                # currently ON: turning OFF requires a second (confirm) click
+                if now - self._confirmOff.get(ip, 0.0) < CONFIRM_S:
+                    self._confirmOff.pop(ip, None)
+                    self.SetPower(ip, False)
+                else:
+                    self._confirmOff[ip] = now
+                    self._setStatus('Click again within %ds to power OFF %s.' % (int(CONFIRM_S), ip))
+                    self._refreshIpDisplay()
+                    run(self._disarmConfirm, ip, delayFrames=CONFIRM_FRAMES)
+                return
+            # OFF or unknown: power on (no confirm needed)
+            self._confirmOff.pop(ip, None)
+            self.SetPower(ip, True)
+
+        def _disarmConfirm(self, ip: str) -> None:
+            armed = self._confirmOff.get(ip)
+            if armed is not None and time.monotonic() - armed >= CONFIRM_S:
+                self._confirmOff.pop(ip, None)
+                self._refreshIpDisplay()
+
+        def QueryPower(self, ip: str) -> None:
+            """Ask a projector for its current power state (%1POWR ?)."""
+            if self._scanning:
+                return
+            self._startPj(ip, '%1POWR ?', 'query')
+
+        def QueryInfo(self, ip: str) -> None:
+            """Fetch a projector's static info: manufacturer, model, name, lamp hours."""
+            if self._scanning:
+                return
+            self._startPj(ip, '', 'info')
+
+        def QueryLamp(self, ip: str) -> None:
+            """Refresh just the lamp-hour count (%1LAMP ?)."""
+            if self._scanning:
+                return
+            self._startPj(ip, '%1LAMP ?', 'lamp')
+
+        def _autoRefresh(self) -> None:
+            """Timer-driven: re-query every projector's power state so external power
+            changes (switched off at the unit, another controller) appear in the UI."""
+            if not int(self.ownerComp.par.Autorefresh.eval()):
+                return
+            if self._scanning or self._pjPending > 0:
+                return                                       # skip this tick; stay serial
+            proj = self.ownerComp.op('projectors')
+            if proj is None:
+                return
+            ips = [proj[r, 0].val for r in range(1, proj.numRows) if proj[r, 0].val]
+            for ip in ips:
+                self.QueryPower(ip)
+            # lamp hours change slowly -> refresh them on a much longer cadence
+            now = time.monotonic()
+            if now - self._lastLampRefresh >= int(self.ownerComp.par.Lampsecs.eval()):
+                self._lastLampRefresh = now
+                for ip in ips:
+                    self.QueryLamp(ip)
+
+        def _startPj(self, ip: str, body: str, kind: str) -> None:
+            port = int(self.ownerComp.par.Port.eval())
+            pw = str(self.ownerComp.par.Password.eval())
+            self._pjPending += 1
+            self._pjBusyIps.add(ip)
+            self._armDrain()
+            t = threading.Thread(
+                target=ProjectorScannerExt._pjWorker,
+                args=(ip, port, 2.0, body, kind, pw, self._pjLock, self._powerResultQ),
+                daemon=True)
+            t.start()
+            self._refreshIpDisplay()
+            self._updateUiState()
+
+        # ---- power workers: NO TouchDesigner access whatsoever ------------------
+
+        @staticmethod
+        def _pjTxn(ip, port, timeout_s, cmd, password) -> str:
+            """One PJLink request/response on its own short-lived connection."""
+            s = socket.create_connection((ip, port), timeout=timeout_s)
+            try:
+                s.settimeout(timeout_s)
+                banner = s.recv(64).decode('ascii', 'replace').strip()
+                prefix = ''
+                parts = banner.split()
+                if banner.upper().startswith('PJLINK') and len(parts) >= 2 and parts[1] == '1':
+                    seed = parts[2] if len(parts) >= 3 else ''
+                    prefix = hashlib.md5((seed + password).encode('ascii', 'ignore')).hexdigest()
+                s.sendall((prefix + cmd + '\r').encode('ascii', 'ignore'))
+                return s.recv(64).decode('ascii', 'replace').strip()
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+        @staticmethod
+        def _pjWorker(ip, port, timeout_s, body, kind, password, lock, outQ) -> None:
+            value = 'ERR'
+            with lock:  # serialize: PJLink permits only one connection at a time
+                try:
+                    if kind == 'power':
+                        ProjectorScannerExt._pjTxn(ip, port, timeout_s, body, password)
+                        time.sleep(0.25)  # let the projector free its slot before re-query
+                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1POWR ?', password)
+                        value = ProjectorScannerExt._parsePowr(resp)
+                    elif kind == 'info':
+                        info = {}
+                        info['maker'] = ProjectorScannerExt._parseInfo(
+                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1INF1 ?', password))
+                        time.sleep(0.1)
+                        info['model'] = ProjectorScannerExt._parseInfo(
+                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1INF2 ?', password))
+                        time.sleep(0.1)
+                        info['name'] = ProjectorScannerExt._parseInfo(
+                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1NAME ?', password))
+                        time.sleep(0.1)
+                        info['lamp'] = ProjectorScannerExt._parseLamp(
+                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1LAMP ?', password))
+                        value = info
+                    elif kind == 'lamp':
+                        value = ProjectorScannerExt._parseLamp(
+                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1LAMP ?', password))
+                    else:
+                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, body, password)
+                        value = ProjectorScannerExt._parsePowr(resp)
+                except Exception:
+                    value = 'ERR'
+            outQ.put((ip, kind, value))
+
+        @staticmethod
+        def _parsePowr(resp) -> str:
+            r = (resp or '').strip().upper()
+            if '=' in r:
+                v = r.split('=', 1)[1].strip()
+                if v in ('0', '1', '2', '3'):
+                    return v
+                if v == 'OK':
+                    return 'OK'
+            return 'ERR'
+
+        @staticmethod
+        def _parseInfo(resp) -> str:
+            """Parse a PJLink info reply (e.g. %1INF2=EB-2250U) to its text value."""
+            r = (resp or '').strip()
+            if '=' in r:
+                v = r.split('=', 1)[1].strip()
+                if v.upper() in ('ERR1', 'ERR2', 'ERR3', 'ERR4', 'ERRA'):
+                    return ''
+                return v
+            return ''
+
+        @staticmethod
+        def _parseLamp(resp) -> str:
+            """Parse a PJLink %1LAMP reply ('hours on/off [hours on/off ...]') to the
+            cumulative lamp hour count(s): '8262', or '8262/13' for a two-lamp unit."""
+            r = (resp or '').strip()
+            if '=' not in r:
+                return ''
+            v = r.split('=', 1)[1].strip()
+            if v.upper() in ('ERR1', 'ERR2', 'ERR3', 'ERR4', 'ERRA'):
+                return ''
+            toks = v.split()
+            hours = [toks[i] for i in range(0, len(toks), 2)]   # skip the on/off flags
+            return '/'.join(hours) if hours else v
+
+        # ---- drain: MAIN THREAD, once per frame while work is in flight ----------
+
+        def pumpResults(self) -> None:
+            # discovery progress
+            got = 0
+            try:
+                while True:
+                    self._progressQ.get_nowait()
+                    got += 1
+            except queue.Empty:
+                pass
+            if got and self._scanning:
+                self._done += got
+                self._setStatus('Scanning ... %d / %d hosts probed'
+                                % (self._done, self._total))
+            # discovery result
+            try:
+                tag, payload = self._resultQ.get_nowait()
+            except queue.Empty:
+                tag = None
+            if tag == 'ERROR':
+                self._scanning = False
+                self._setStatus('Scan error: %s' % payload)
+            elif tag == 'DONE':
+                self._scanning = False
+                self._writeResults(payload)
+            # power results
+            drained = False
+            while True:
+                try:
+                    ip, kind, value = self._powerResultQ.get_nowait()
+                except queue.Empty:
+                    break
+                drained = True
+                self._pjPending = max(0, self._pjPending - 1)
+                self._pjBusyIps.discard(ip)
+                if kind == 'info':
+                    if isinstance(value, dict):
+                        self._maker[ip] = value.get('maker') or '?'
+                        self._model[ip] = value.get('model') or '?'
+                        self._name[ip] = value.get('name') or '?'
+                        self._lamp[ip] = value.get('lamp') or '?'
+                    continue
+                if kind == 'lamp':
+                    self._lamp[ip] = value if value else '?'
+                    continue
+                if value in ('0', '1', '2', '3'):
+                    self._power[ip] = value
+                elif value != 'OK':
+                    self._power[ip] = 'ERR'
+                label = POWER_LABEL.get(self._power.get(ip, '?'), '?')
+                if value == 'ERR':
+                    self._setStatus('Projector %s did not respond to power command.' % ip)
+                else:
+                    self._setStatus('Projector %s power: %s' % (ip, label))
+                # keep polling while the projector is transitioning (COOL/WARM)
+                if self._power.get(ip) in ('2', '3'):
+                    cnt = self._pollCount.get(ip, 0)
+                    if cnt < POLL_MAX:
+                        self._pollCount[ip] = cnt + 1
+                        run(self.QueryPower, ip, delayFrames=POLL_FRAMES)
+                else:
+                    self._pollCount.pop(ip, None)
+            if drained:
+                self._refreshIpDisplay()
+            # idle when nothing is in flight
+            if not self._scanning and self._pjPending <= 0:
+                self._disarmDrain()
+            self._updateUiState()
+
+        # ---- table writing ------------------------------------------------------
+
+        def _resetTables(self) -> None:
+            proj = self.ownerComp.op('projectors')
+            allr = self.ownerComp.op('scan_results')
+            if proj is not None:
+                proj.clear(keepFirstRow=False)
+                proj.appendRow(['ip', 'auth', 'seed', 'banner'])
+            if allr is not None:
+                allr.clear(keepFirstRow=False)
+                allr.appendRow(['ip', 'is_projector', 'auth', 'banner'])
+            self._refreshIpDisplay()
+
+        def _refreshIpDisplay(self) -> None:
+            """Mirror the projectors into the UI list source: column 0 = power label,
+            column 1 = IP address (header + one row per projector), then refresh the
+            on-screen list."""
+            disp = self.ownerComp.op('ui/ip_display')
+            if disp is not None:
+                src = self.ownerComp.op('projectors')
+                disp.clear(keepFirstRow=False)
+                disp.appendRow(['Power', 'IP Address', 'Name', 'Maker', 'Unit', 'Lamp Hrs'])
+                if src is not None:
+                    for r in range(1, src.numRows):
+                        ip = src[r, 0].val
+                        if ip:
+                            if ip in self._pjBusyIps:
+                                label = '...'
+                            elif ip in self._confirmOff:
+                                label = 'OFF?'
+                            else:
+                                label = POWER_LABEL.get(self._power.get(ip, '?'), '?')
+                            disp.appendRow([label, ip,
+                                            self._name.get(ip) or '?',
+                                            self._maker.get(ip) or '?',
+                                            self._model.get(ip) or '?',
+                                            self._lamp.get(ip) or '?'])
+            lst = self.ownerComp.op('ui/ip_list')
+            if lst is not None:
+                lst.par.cols = 6
+                lst.par.rows = disp.numRows if disp is not None else 1
+                lst.par.reset.pulse()
+
+        def _writeResults(self, results: List[Dict]) -> None:
+            def ipkey(r):
+                try:
+                    return tuple(int(x) for x in r['ip'].split('.'))
+                except Exception:
+                    return (999, 999, 999, 999)
+            responders = sorted(results, key=ipkey)
+            projectors = [r for r in responders if r['is_projector']]
+
+            allr = self.ownerComp.op('scan_results')
+            if allr is not None:
+                allr.clear(keepFirstRow=False)
+                allr.appendRow(['ip', 'is_projector', 'auth', 'banner'])
+                for r in responders:
+                    allr.appendRow([r['ip'], '1' if r['is_projector'] else '0',
+                                    r['auth'], r['banner']])
+
+            proj = self.ownerComp.op('projectors')
+            if proj is not None:
+                proj.clear(keepFirstRow=False)
+                proj.appendRow(['ip', 'auth', 'seed', 'banner'])
+                for r in projectors:
+                    proj.appendRow([r['ip'], r['auth'], r['seed'], r['banner']])
+
+            self._refreshIpDisplay()
+            self._lastLampRefresh = time.monotonic()   # info() just fetched lamp hours
+            for r in projectors:              # populate power state + info per projector
+                self.QueryPower(r['ip'])
+                self.QueryInfo(r['ip'])
+
+            n, m = len(projectors), len(responders)
+            if m == 0:
+                self._setStatus('Done. No host answered on the PJLink port. Check the '
+                                'projector is powered on and on this subnet.')
+            elif n == 0:
+                self._setStatus('Done. %d host(s) had the port open but none spoke '
+                                'PJLink (see scan_results).' % m)
+            else:
+                self._setStatus('Done. Found %d projector(s). First: %s'
+                                % (n, projectors[0]['ip']))
+  dat_content_format: text
+- name: refresh_timer_callbacks
+  type: textDAT
+  parameters:
+    language: python
+  flags:
+  - viewer
+  - -showDocked
+  position: [200, -560]
+  size: [130, 90]
+  dock: refresh_timer
+  dat_content: |
+    # refresh_timer: fires onCycle every 'Refresh Interval' seconds while Auto-Refresh
+    # is on, re-querying each projector's power state so the list stays accurate.
+
+    def onCycle(timerOp, segment, cycle):
+        parent.ProjectorScanner.ext.ProjectorScanner._autoRefresh()
+        return
+  dat_content_format: text
+annotations:
+- name: annotate1
+  mode: annotate
+  title: Projector Discovery + Power (PJLink)
+  text: 'Scans the /24 for PJLink projectors (TCP 4352) and controls power. UI viewer: per-row ON/OFF toggle (confirm before OFF) + IP list. Power uses serialized background sockets; refresh_timer re-queries every ~15s so state stays live. tcpip1 (right) is unused.'
+  position: [130, -630]
+  size: [995, 1090]
+  color: [0.45, 0.45, 0.45]
