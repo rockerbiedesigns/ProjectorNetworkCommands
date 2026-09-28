@@ -19,3 +19,6 @@ opencode.json
 briefs/
 __pycache__/
 .DS_Store
+
+# TouchDesigner incremental-save .toe files -- keep only the canonical ScanNetwork.toe
+ScanNetwork.[0-9]*.toe
