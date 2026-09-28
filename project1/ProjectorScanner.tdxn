@@ -8,9 +8,37 @@ options:
   include_dat_content: false
   include_storage: true
 type_defaults:
+  buttonCOMP:
+    parameters:
+      bottomanchor: 1
+      bottomoffset: -36
+      buttontype: momentary
+      clone: =op.TDTox.op('defaultCOMPs/button')
+      hmode: anchors
+      repocomp: =me
+      resizecomp: =me
+      vmode: anchors
+    size: [160, 134]
+  outCHOP:
+    parameters:
+      autoexportroot: =parent()
+      label: =me.name
+    flags:
+    - viewer
+    size: [130, 90]
   panelexecuteDAT:
     parameters:
       fromop: =parent()
+  parameterCHOP:
+    parameters:
+      autoexportroot: =parent()
+      builtin: true
+      custom: false
+      parameters: value0
+      renameto: v1
+    flags:
+    - viewer
+    size: [130, 90]
   parameterexecuteDAT:
     parameters:
       fromop: =parent()
@@ -22,6 +50,41 @@ type_defaults:
     color: [0.67, 0.67, 0.67]
     tags:
     - tdxn_exclude:dat_content
+  textCOMP:
+    parameters:
+      bgalpha: 1
+      bgcolorb: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorb + r * 0.1
+      bgcolorg: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorg + r * 0.1
+      bgcolorr: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorr + r * 0.1
+      borderab: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorb + .2
+      borderag: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorg + .2
+      borderar: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorr + .2
+      borderover: false
+      bottomborder: bordera
+      clickthrough: true
+      fontcolorb: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorb + .5
+      fontcolorg: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorg + .5
+      fontcolorr: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorr + .5
+      fontsize: =parent().par[me.curPar.name] or me.curPar.val
+      hmode: fill
+      leftborder: bordera
+      legacyfontselection: true
+      linespacing: =parent().par[me.curPar.name] or me.curPar.val
+      repocomp: =me
+      resizecomp: =me
+      rightborder: bordera
+      scaletofit: =parent().par[me.curPar.name] or me.curPar.val
+      text: =parent().par.label
+      textpaddingb: =parent().par[me.curPar.name] or me.curPar.val
+      textpaddingl: =parent().par[me.curPar.name] or me.curPar.val
+      textpaddingr: =parent().par[me.curPar.name] or me.curPar.val
+      textpaddingt: =parent().par[me.curPar.name] or me.curPar.val
+      topborder: bordera
+      type: multiline
+      vmode: fill
+    flags:
+    - viewer
+    size: [113, 96]
   textDAT:
     color: [0.67, 0.67, 0.67]
 type: baseCOMP
@@ -118,6 +181,19 @@ tags:
 - tdxn
 - tdxn_exclude:Status
 comment: PJLink projector discovery
+storage:
+  info_lamp:
+    192.168.50.36: '13'
+    192.168.50.190: '2535'
+  info_maker:
+    192.168.50.36: EPSON
+    192.168.50.190: EPSON
+  info_model:
+    192.168.50.36: EB-96W/C2030WN/PowerLite 96W
+    192.168.50.190: EB-410W/PowerLite 410W
+  info_name:
+    192.168.50.36: EBFE7340
+    192.168.50.190: EB763F51
 operators:
 - name: ui
   type: containerCOMP
@@ -139,8 +215,7 @@ operators:
     type: listCOMP
     parameters:
       callbacks: ip_list_callbacks
-      rows: 2
-      cols: 6
+      cols: 7
       lockfirstrow: true
       hmode: fill
       vmode: anchors
@@ -154,33 +229,35 @@ operators:
   - name: btn_exec
     type: panelexecuteDAT
     parameters:
-      panels: scan_btn
+      panels: scan_btn selon_btn seloff_btn
     position: [520, 0]
     size: [130, 90]
     color: [0.67, 0.67, 0.67]
     dat_content: |
-      # Scan button handler: a press starts a subnet sweep via the extension.
+      # Top-row buttons: Scan / Selected On / Selected Off. Dispatch by which one.
 
       def onOffToOn(panelValue):
-          parent.ProjectorScanner.Scan()
+          name = panelValue.owner.name
+          ps = parent.ProjectorScanner
+          if name == 'scan_btn':
+              ps.Scan()
+          elif name == 'selon_btn':
+              ps.PowerSelected(True)
+          elif name == 'seloff_btn':
+              ps.PowerSelected(False)
           return
     dat_content_format: text
   - name: scan_btn
     type: buttonCOMP
     parameters:
       label: Scan
-      buttontype: momentary
       fontsize: 14
       colorr: 0.92
       colorg: 0.94
       colorb: 0.98
       h: 34
-      hmode: fill
-      vmode: anchors
-      bottomanchor: 1
-      bottomoffset: -36
-      resizecomp: =me
-      repocomp: =me
+      rightanchor: 0.34
+      rightoffset: -2
       bgcolorr: 0.18
       bgcolorg: 0.22
       bgcolorb: 0.3
@@ -189,70 +266,73 @@ operators:
       disablecolorg: 0.13
       disablecolorb: 0.15
       disablealpha: 0.8
-      clone: =op.TDTox.op('defaultCOMPs/button')
     position: [520, 200]
-    size: [160, 134]
     children:
     - name: out1
       type: outCHOP
-      parameters:
-        label: =me.name
-        autoexportroot: =parent()
-      flags:
-      - viewer
       position: [275, 175]
-      size: [130, 90]
       inputs:
       - par1
     - name: par1
       type: parameterCHOP
-      parameters:
-        parameters: value0
-        custom: false
-        builtin: true
-        renameto: v1
-        autoexportroot: =parent()
-      flags:
-      - viewer
       position: [65, 175]
-      size: [130, 90]
     - name: text
       type: textCOMP
+      position: [74, 26]
+    - name: parexec1
+      type: parameterexecuteDAT
       parameters:
-        text: =parent().par.label
-        type: multiline
-        legacyfontselection: true
-        scaletofit: =parent().par[me.curPar.name] or me.curPar.val
-        fontsize: =parent().par[me.curPar.name] or me.curPar.val
-        linespacing: =parent().par[me.curPar.name] or me.curPar.val
-        fontcolorr: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorr + .5
-        fontcolorg: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorg + .5
-        fontcolorb: =[c/.5 for c in [.1, .3]][parent().par.value0] * parent().par.colorb + .5
-        textpaddingl: =parent().par[me.curPar.name] or me.curPar.val
-        textpaddingr: =parent().par[me.curPar.name] or me.curPar.val
-        textpaddingb: =parent().par[me.curPar.name] or me.curPar.val
-        textpaddingt: =parent().par[me.curPar.name] or me.curPar.val
-        hmode: fill
-        vmode: fill
-        clickthrough: true
-        resizecomp: =me
-        repocomp: =me
-        bgcolorr: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorr + r * 0.1
-        bgcolorg: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorg + r * 0.1
-        bgcolorb: =[c/.5 for c in [.2, .4, .15, .35]][parent().par.value0 + 2*(r:=parent().panel.rollover)] * parent().par.colorb + r * 0.1
-        bgalpha: 1
-        borderar: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorr + .2
-        borderag: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorg + .2
-        borderab: =[c/.5 for c in [.23, .4, .3, .6]][parent().par.value0 + 2*parent().panel.rollover] * parent().par.colorb + .2
-        leftborder: bordera
-        rightborder: bordera
-        bottomborder: bordera
-        topborder: bordera
-        borderover: false
+        pars: value0
+        onpulse: false
+        defaultreadencoding: cp1252
+        loadonstart: true
+      position: [66, -83]
+      size: [128, 66]
+      dat_content: "# par - the Par object that has changed\n# prev - the previous value\n\ndef onValueChange(par, prev):\n\tif not parent().panel.select :\n\t\tparent().panel.state = par.eval()\n\treturn"
+      dat_content_format: text
+    - name: panelexec1
+      type: panelexecuteDAT
+      parameters:
+        panels: =parent()
+        panelvalue: state
+        offtoon: false
+        valuechange: true
+        defaultreadencoding: cp1252
+        loadonstart: true
       flags:
       - viewer
+      position: [247, -81]
+      size: [126, 62]
+      dat_content: "# panelValue - the PanelValue object that changed\n# Make sure the corresponding toggle is enabled in the Panel Execute DAT.\n\ndef onValueChange(panelValue):\n\tparent().par.value0 = panelValue\n\treturn"
+      dat_content_format: text
+  - name: selon_btn
+    type: buttonCOMP
+    parameters:
+      label: Selected On
+      fontsize: 13
+      colorr: 0.9
+      colorg: 1
+      colorb: 0.92
+      leftanchor: 0.34
+      leftoffset: 2
+      rightanchor: 0.67
+      rightoffset: -1
+      bgcolorr: 0.14
+      bgcolorg: 0.32
+      bgcolorb: 0.18
+    position: [720, 200]
+    children:
+    - name: out1
+      type: outCHOP
+      position: [275, 175]
+      inputs:
+      - par1
+    - name: par1
+      type: parameterCHOP
+      position: [65, 175]
+    - name: text
+      type: textCOMP
       position: [74, 26]
-      size: [113, 96]
     - name: parexec1
       type: parameterexecuteDAT
       parameters:
@@ -282,6 +362,58 @@ operators:
   - name: ip_display
     type: tableDAT
     position: [0, 200]
+  - name: seloff_btn
+    type: buttonCOMP
+    parameters:
+      label: Selected Off
+      fontsize: 13
+      colorr: 1
+      colorg: 0.9
+      colorb: 0.9
+      leftanchor: 0.67
+      leftoffset: 2
+      bgcolorr: 0.34
+      bgcolorg: 0.15
+      bgcolorb: 0.16
+    position: [900, 200]
+    children:
+    - name: out1
+      type: outCHOP
+      position: [275, 175]
+      inputs:
+      - par1
+    - name: par1
+      type: parameterCHOP
+      position: [65, 175]
+    - name: text
+      type: textCOMP
+      position: [74, 26]
+    - name: parexec1
+      type: parameterexecuteDAT
+      parameters:
+        pars: value0
+        onpulse: false
+        defaultreadencoding: cp1252
+        loadonstart: true
+      position: [66, -83]
+      size: [128, 66]
+      dat_content: "# par - the Par object that has changed\n# prev - the previous value\n\ndef onValueChange(par, prev):\n\tif not parent().panel.select :\n\t\tparent().panel.state = par.eval()\n\treturn"
+      dat_content_format: text
+    - name: panelexec1
+      type: panelexecuteDAT
+      parameters:
+        panels: =parent()
+        panelvalue: state
+        offtoon: false
+        valuechange: true
+        defaultreadencoding: cp1252
+        loadonstart: true
+      flags:
+      - viewer
+      position: [247, -81]
+      size: [126, 62]
+      dat_content: "# panelValue - the PanelValue object that changed\n# Make sure the corresponding toggle is enabled in the Panel Execute DAT.\n\ndef onValueChange(panelValue):\n\tparent().par.value0 = panelValue\n\treturn"
+      dat_content_format: text
   - name: ip_list_callbacks
     type: textDAT
     parameters:
@@ -293,11 +425,11 @@ operators:
     size: [160, 130]
     dock: ip_list
     dat_content: |
-      # List COMP callbacks. Two columns from ../ip_display:
-      #   col 0 = power toggle button (ON/OFF/COOL/WARM/? , or '...' while busy)
-      #   col 1 = IP Address
-      # Row 0 is the styled header. Data rows have zebra striping + rollover highlight.
-      # A '...' power cell is a command in flight -- greyed and not clickable.
+      # List COMP callbacks. Seven columns from ../ip_display:
+      #   col 0 = Sel    (selection checkbox: '[x]'/'[ ]', click to toggle selection)
+      #   col 1 = Power  (ON/OFF/COOL/WARM/? , '...' busy, 'OFF?' confirm; click to toggle)
+      #   col 2 = IP Address   col 3 = Name   col 4 = Maker   col 5 = Unit   col 6 = Lamp Hrs
+      # Row 0 is the styled header.
 
       def onInitCell(comp, row, col, attribs):
           src = comp.op('../ip_display')
@@ -306,21 +438,39 @@ operators:
               text = src[row, col].val
           attribs.text = text
           attribs.rowHeight = 28
-          attribs.textJustify = JustifyType.CENTER if col == 0 else JustifyType.CENTERLEFT
-          attribs.textOffsetX = 0 if col == 0 else 12
 
           if row == 0:
               attribs.bgColor = [0.16, 0.17, 0.22, 1.0]
               attribs.textColor = [0.86, 0.90, 0.98, 1.0]
               attribs.fontBold = True
+              attribs.textJustify = JustifyType.CENTER if col in (0, 1) else JustifyType.CENTERLEFT
               return
 
           if col == 0:
+              # selection checkbox
+              attribs.textJustify = JustifyType.CENTER
+              attribs.fontBold = True
+              if text.strip() == '[x]':
+                  attribs.bgColor = [0.20, 0.42, 0.58, 1.0]
+                  attribs.textColor = [0.90, 0.98, 1.0, 1.0]
+              else:
+                  attribs.bgColor = [0.13, 0.14, 0.17, 1.0]
+                  attribs.textColor = [0.48, 0.50, 0.56, 1.0]
+              if attribs.rollover:
+                  bg = attribs.bgColor
+                  attribs.bgColor = [min(1.0, bg[0] + 0.10), min(1.0, bg[1] + 0.10),
+                                     min(1.0, bg[2] + 0.10), 1.0]
+              return
+
+          if col == 1:
+              # power state / toggle
+              attribs.textJustify = JustifyType.CENTER
+              attribs.fontBold = True
               state = text.upper()
-              if text == '...':                       # command in flight -- busy
+              if text == '...':
                   attribs.bgColor = [0.18, 0.19, 0.22, 1.0]
                   attribs.textColor = [0.60, 0.62, 0.68, 1.0]
-              elif text == 'OFF?':                     # awaiting OFF confirmation
+              elif text == 'OFF?':
                   attribs.bgColor = [0.55, 0.33, 0.06, 1.0]
                   attribs.textColor = [1.0, 0.96, 0.86, 1.0]
               elif state == 'ON':
@@ -335,14 +485,15 @@ operators:
               else:
                   attribs.bgColor = [0.20, 0.21, 0.25, 1.0]
                   attribs.textColor = [0.72, 0.74, 0.80, 1.0]
-              attribs.fontBold = True
               if attribs.rollover and text != '...':
                   bg = attribs.bgColor
                   attribs.bgColor = [min(1.0, bg[0] + 0.10), min(1.0, bg[1] + 0.10),
                                      min(1.0, bg[2] + 0.10), 1.0]
               return
 
-          # IP Address column
+          # info columns (2..6)
+          attribs.textJustify = JustifyType.CENTERLEFT
+          attribs.textOffsetX = 12
           attribs.textColor = [0.90, 0.95, 1.0, 1.0]
           attribs.bgColor = [0.115, 0.125, 0.150, 1.0] if row % 2 else [0.140, 0.150, 0.180, 1.0]
           if attribs.rollover:
@@ -351,10 +502,10 @@ operators:
 
 
       def onInitCol(comp, col, attribs):
-          fixed = {0: 56, 1: 120, 2: 120, 3: 84, 5: 80}   # Power, IP, Name, Maker, Lamp Hrs
+          fixed = {0: 42, 1: 56, 2: 120, 3: 110, 4: 80, 6: 74}   # Sel,Power,IP,Name,Maker,Lamp
           if col in fixed:
               attribs.colWidth = fixed[col]
-          else:                                            # col 4 = Unit (model) -- stretches
+          else:                                                   # col 5 = Unit -- stretches
               attribs.colWidth = 150
               try:
                   attribs.colStretch = True
@@ -364,15 +515,19 @@ operators:
 
 
       def onSelect(comp, startRow, startCol, startCoords, endRow, endCol, endCoords, start, end):
-          # click a power cell (col 0, data row) to toggle that projector's power.
-          # The extension ignores the click if that projector already has a command in
-          # flight or a scan is running, so no extra guard is needed here.
-          if startRow == endRow and startCol == endCol and startRow > 0 and startCol == 0:
+          # single-cell clicks on data rows: col 0 toggles selection, col 1 toggles power
+          if startRow == endRow and startCol == endCol and startRow > 0:
               src = comp.op('../ip_display')
-              if src is not None and startRow < src.numRows:
-                  ip = src[startRow, 1].val
-                  if ip:
-                      parent.ProjectorScanner.ext.ProjectorScanner.TogglePower(ip)
+              if src is None or startRow >= src.numRows:
+                  return
+              ip = src[startRow, 2].val   # IP Address is column 2
+              if not ip:
+                  return
+              ext = parent.ProjectorScanner.ext.ProjectorScanner
+              if startCol == 0:
+                  ext.ToggleSelect(ip)
+              elif startCol == 1:
+                  ext.TogglePower(ip)
           return
     dat_content_format: text
 - name: tcpip1
@@ -538,11 +693,17 @@ operators:
             self._pjBusyIps = set()                      # ips with a power command in flight
             self._confirmOff: Dict[str, float] = {}      # ip -> OFF-confirm armed monotonic
             self._pollCount: Dict[str, int] = {}         # ip -> COOL/WARM poll count
-            self._model: Dict[str, str] = {}             # ip -> model / product name
-            self._maker: Dict[str, str] = {}             # ip -> manufacturer name
-            self._name: Dict[str, str] = {}              # ip -> user-set projector name
-            self._lamp: Dict[str, str] = {}              # ip -> lamp hour count(s)
+            # Static-ish info persists in storage so it survives an extension reinit.
+            # (Only a scan re-fetches it; auto-refresh does not -- without this it
+            # blanks to '?' after every source save/reinit.) Power is deliberately NOT
+            # persisted: it is volatile and self-heals via auto-refresh in ~15s.
+            self._model = dict(self.ownerComp.fetch('info_model', {}))   # ip -> model / product name
+            self._maker = dict(self.ownerComp.fetch('info_maker', {}))   # ip -> manufacturer name
+            self._name = dict(self.ownerComp.fetch('info_name', {}))     # ip -> user-set name
+            self._lamp = dict(self.ownerComp.fetch('info_lamp', {}))     # ip -> lamp hour count(s)
             self._lastLampRefresh: float = 0.0           # monotonic of last lamp-hours poll
+            self._selected = set()                       # ips ticked for bulk on/off
+            self._selGuard: Dict[str, float] = {}        # ip -> last select-toggle monotonic
 
         # ---- lifecycle ----------------------------------------------------------
 
@@ -560,6 +721,7 @@ operators:
             self._ensureUi()
             self._updateUiState()
             run(self._startTimer, delayFrames=15)   # auto-start the refresh timer
+            run(self._autoRefresh, delayFrames=30)  # refresh power soon so it isn't '?' for a full interval
 
         def onDestroyTD(self) -> None:
             self._disarmDrain()
@@ -703,25 +865,32 @@ operators:
                     pass
 
         def _updateUiState(self) -> None:
-            """Reflect busy state on the Scan button via opacity + label. The button
-            stays ENABLED -- disabling it (enable=0) makes the button's own internal
-            PanelValue sync raise 'PanelValue is disabled'. Clicks while busy are
-            refused by Scan()/TogglePower(), so no functional gate is lost."""
-            btn = self.ownerComp.op('ui/scan_btn')
-            if btn is not None:
+            """Reflect busy state via opacity + label. Buttons stay ENABLED --
+            disabling a buttonCOMP (enable=0) makes its own internal PanelValue sync
+            raise 'PanelValue is disabled'. Clicks while busy are refused by the
+            extension, so no functional gate is lost."""
+            busy = self._scanning or self._pjPending > 0
+            scan = self.ownerComp.op('ui/scan_btn')
+            if scan is not None:
                 try:
-                    btn.par.enable = 1
+                    scan.par.enable = 1
+                    scan.par.opacity = 0.5 if busy else 1.0
                     if self._scanning:
-                        btn.par.opacity = 0.5
-                        btn.par.label = 'Scanning...'
+                        scan.par.label = 'Scanning...'
                     elif self._pjPending > 0:
-                        btn.par.opacity = 0.5
-                        btn.par.label = 'Working...'
+                        scan.par.label = 'Working...'
                     else:
-                        btn.par.opacity = 1.0
-                        btn.par.label = 'Scan'
+                        scan.par.label = 'Scan'
                 except Exception:
                     pass
+            for name in ('selon_btn', 'seloff_btn'):
+                b = self.ownerComp.op('ui/' + name)
+                if b is not None:
+                    try:
+                        b.par.enable = 1
+                        b.par.opacity = 0.5 if busy else 1.0
+                    except Exception:
+                        pass
 
         def _startTimer(self) -> None:
             """Start the auto-refresh timer (free-runs; _autoRefresh gates on the toggle)."""
@@ -901,6 +1070,60 @@ operators:
                 return
             self._startPj(ip, '%1LAMP ?', 'lamp')
 
+        def ToggleSelect(self, ip: str) -> None:
+            """Tick / untick a projector's selection box. onSelect fires every frame
+            while the mouse is held, so debounce to one flip per click -- otherwise
+            the box flickers on/off and lands on mouse-up parity."""
+            now = time.monotonic()
+            if now - self._selGuard.get(ip, 0.0) < 0.4:
+                return
+            self._selGuard[ip] = now
+            if ip in self._selected:
+                self._selected.discard(ip)
+            else:
+                self._selected.add(ip)
+            self._refreshIpDisplay()
+
+        def _selectedIps(self) -> List[str]:
+            proj = self.ownerComp.op('projectors')
+            live = []
+            if proj is not None:
+                for r in range(1, proj.numRows):
+                    ip = proj[r, 0].val
+                    if ip and ip in self._selected:
+                        live.append(ip)
+            return live
+
+        def PowerSelected(self, on: bool) -> None:
+            """Turn every SELECTED projector on or off. Skips (and reports) any that
+            are already in the requested state -- e.g. Selected Off on a projector
+            that is already off -- and any mid-transition (cooling/warming)."""
+            if self._scanning:
+                self._setStatus('A scan is in progress -- please wait.')
+                return
+            sel = self._selectedIps()
+            if not sel:
+                self._setStatus('No projectors selected -- tick the Sel box on a row first.')
+                return
+            target = '1' if on else '0'
+            word = 'on' if on else 'off'
+            sent, already, trans = [], [], []
+            for ip in sel:
+                cur = self._power.get(ip, '?')
+                if cur == target:
+                    already.append(ip)
+                elif cur in ('2', '3'):
+                    trans.append(ip)
+                else:
+                    self.SetPower(ip, on)
+                    sent.append(ip)
+            parts = ['Selected %s: %d sent' % (word.capitalize(), len(sent))]
+            if already:
+                parts.append('%d already %s (%s)' % (len(already), word, ', '.join(already)))
+            if trans:
+                parts.append('%d cooling/warming skipped (%s)' % (len(trans), ', '.join(trans)))
+            self._setStatus('; '.join(parts) + '.')
+
         def _autoRefresh(self) -> None:
             """Timer-driven: re-query every projector's power state so external power
             changes (switched off at the unit, another controller) appear in the UI."""
@@ -1065,13 +1288,15 @@ operators:
                 self._pjBusyIps.discard(ip)
                 if kind == 'info':
                     if isinstance(value, dict):
-                        self._maker[ip] = value.get('maker') or '?'
-                        self._model[ip] = value.get('model') or '?'
-                        self._name[ip] = value.get('name') or '?'
-                        self._lamp[ip] = value.get('lamp') or '?'
+                        self._maker[ip] = value.get('maker') or self._maker.get(ip) or '?'
+                        self._model[ip] = value.get('model') or self._model.get(ip) or '?'
+                        self._name[ip] = value.get('name') or self._name.get(ip) or '?'
+                        self._lamp[ip] = value.get('lamp') or self._lamp.get(ip) or '?'
+                        self._storeInfo()
                     continue
                 if kind == 'lamp':
-                    self._lamp[ip] = value if value else '?'
+                    self._lamp[ip] = value or self._lamp.get(ip) or '?'
+                    self._storeInfo()
                     continue
                 if value in ('0', '1', '2', '3'):
                     self._power[ip] = value
@@ -1110,6 +1335,13 @@ operators:
                 allr.appendRow(['ip', 'is_projector', 'auth', 'banner'])
             self._refreshIpDisplay()
 
+        def _storeInfo(self) -> None:
+            """Persist static-ish projector info so it survives an extension reinit."""
+            self.ownerComp.store('info_maker', self._maker)
+            self.ownerComp.store('info_model', self._model)
+            self.ownerComp.store('info_name', self._name)
+            self.ownerComp.store('info_lamp', self._lamp)
+
         def _refreshIpDisplay(self) -> None:
             """Mirror the projectors into the UI list source: column 0 = power label,
             column 1 = IP address (header + one row per projector), then refresh the
@@ -1118,7 +1350,7 @@ operators:
             if disp is not None:
                 src = self.ownerComp.op('projectors')
                 disp.clear(keepFirstRow=False)
-                disp.appendRow(['Power', 'IP Address', 'Name', 'Maker', 'Unit', 'Lamp Hrs'])
+                disp.appendRow(['Sel', 'Power', 'IP Address', 'Name', 'Make', 'Unit', 'Lamp Hrs'])
                 if src is not None:
                     for r in range(1, src.numRows):
                         ip = src[r, 0].val
@@ -1129,14 +1361,15 @@ operators:
                                 label = 'OFF?'
                             else:
                                 label = POWER_LABEL.get(self._power.get(ip, '?'), '?')
-                            disp.appendRow([label, ip,
+                            selbox = '[x]' if ip in self._selected else '[ ]'
+                            disp.appendRow([selbox, label, ip,
                                             self._name.get(ip) or '?',
                                             self._maker.get(ip) or '?',
                                             self._model.get(ip) or '?',
                                             self._lamp.get(ip) or '?'])
             lst = self.ownerComp.op('ui/ip_list')
             if lst is not None:
-                lst.par.cols = 6
+                lst.par.cols = 7
                 lst.par.rows = disp.numRows if disp is not None else 1
                 lst.par.reset.pulse()
 
