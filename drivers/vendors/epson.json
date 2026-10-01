@@ -1,0 +1,14 @@
+{
+  "driver_id": "vendor.epson",
+  "label": "Epson (PJLink + ESC/VP21)",
+  "protocol": "pjlink",
+  "extends": "protocol.pjlink",
+  "match": { "manufacturer_contains": "epson" },
+  "capabilities": {
+    "input.get":       { "command": "SOURCE?",  "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 } },
+    "av.mute.get":     { "command": "MUTE?",    "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 } },
+    "av.mute.on":      { "command": "MUTE ON",  "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 } },
+    "av.mute.off":     { "command": "MUTE OFF", "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 } },
+    "input.set.hdmi1": { "command": "SOURCE 30","parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 } }
+  }
+}

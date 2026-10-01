@@ -855,6 +855,7 @@ operators:
             self._selGuard: Dict[str, float] = {}        # ip -> last select-toggle monotonic
             self._pclass = dict(self.ownerComp.fetch('info_class', {}))  # ip -> PJLink class
             self._drivers = None                         # DriverManager (lazy; see _ensureDrivers)
+            self._actionResults: Dict[str, Dict] = {}    # ip -> {dest: value} for generic actions
 
         # ---- lifecycle ----------------------------------------------------------
 
@@ -1164,6 +1165,10 @@ operators:
                 self._setStatus('A scan is in progress -- wait before controlling power.')
                 return
             self._runAction(ip, 'power.on' if on else 'power.off', 'power')
+            # the command's immediate confirm can read the pre-transition state, so
+            # re-query shortly after to catch WARM/COOL (which then self-polls to settle)
+            run(self.QueryPower, ip, delayFrames=180)   # ~3s
+            run(self.QueryPower, ip, delayFrames=480)   # ~8s
 
         def TogglePower(self, ip: str) -> None:
             """Toggle a projector. Turning OFF needs a confirm (click again within a
@@ -1358,11 +1363,14 @@ operators:
                 return None
             return dm.match_driver(self._maker.get(ip, ''), self._model.get(ip, '')) or 'protocol.pjlink'
 
-        def _stepFromSpec(self, spec, dest=None):
-            """Turn a resolved capability spec into one worker step, or None."""
+        def _stepFromSpec(self, spec, dest=None, transport=None):
+            """Turn a resolved capability spec into one worker step, or None. The step
+            carries its own transport: a per-capability override, else the driver
+            default (so PJLink actions use PJLink, ESC/VP21 actions use ESC/VP.net)."""
             if not spec or not spec.get('command'):
                 return None
-            return {'command': spec['command'], 'parse': spec.get('parse', 'pjlink_text'), 'dest': dest}
+            return {'command': spec['command'], 'parse': spec.get('parse', 'pjlink_text'),
+                    'dest': dest, 'transport': spec.get('transport') or transport}
 
         def _runAction(self, ip: str, action: str, token: str) -> None:
             """Resolve a normalized action to its driver command(s) and run them on
@@ -1374,13 +1382,14 @@ operators:
             if not spec or not spec.get('command'):
                 self._setStatus('Action "%s" not supported for %s.' % (action, ip))
                 return
-            if action.endswith(('.get', '.hours')):
-                steps = [self._stepFromSpec(spec, dest=token)]
+            dt = dm.transport(driver)
+            if action.endswith(('.get', '.hours', '.query')):
+                steps = [self._stepFromSpec(spec, dest=token, transport=dt)]
             else:
-                steps = [self._stepFromSpec(spec)]            # command (ack), no dest
+                steps = [self._stepFromSpec(spec, transport=dt)]   # command (ack), no dest
                 cw = spec.get('confirm_with')
                 if cw:
-                    steps.append(self._stepFromSpec(dm.resolve_action(driver, cw), dest=token))
+                    steps.append(self._stepFromSpec(dm.resolve_action(driver, cw), dest=token, transport=dt))
             steps = [s for s in steps if s]
             if steps:
                 self._startSteps(ip, steps, token)
@@ -1395,7 +1404,8 @@ operators:
                 return
             wanted = [('info.manufacturer', 'maker'), ('info.model', 'model'),
                       ('info.name', 'name'), ('info.class', 'class'), ('lamp.hours', 'lamp')]
-            steps = [self._stepFromSpec(dm.resolve_action(driver, a), dest=d) for a, d in wanted]
+            dt = dm.transport(driver)
+            steps = [self._stepFromSpec(dm.resolve_action(driver, a), dest=d, transport=dt) for a, d in wanted]
             steps = [s for s in steps if s]
             if steps:
                 self._startSteps(ip, steps, 'info')
@@ -1438,6 +1448,26 @@ operators:
                     pass
 
         @staticmethod
+        def _escVpTxn(ip, port, timeout_s, cmd) -> str:
+            """One Epson ESC/VP.net request/response: the 16-byte handshake, then a
+            text command terminated with CR. Returns the reply with its trailing ':'
+            prompt and CR stripped ('' for a bare ack, 'ERR' on failure)."""
+            s = socket.create_connection((ip, port), timeout=timeout_s)
+            try:
+                s.settimeout(timeout_s)
+                s.sendall(b'ESC/VP.net' + bytes([0x10, 0x03, 0x00, 0x00, 0x00, 0x00]))
+                if not s.recv(16).startswith(b'ESC/VP.net'):
+                    return 'ERR'
+                s.sendall((cmd + '\r').encode('ascii', 'ignore'))
+                raw = s.recv(64).decode('ascii', 'replace')
+                return raw.replace('\r', '').replace(':', '').strip()
+            finally:
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+        @staticmethod
         def _opWorker(ip, port, timeout_s, steps, password, lock, outQ, token) -> None:
             """Run a resolved list of {command, parse, dest} steps on the serialized
             one-connection-at-a-time PJLink transport. Pure Python, NO TD access.
@@ -1450,14 +1480,26 @@ operators:
                     return ProjectorScannerExt._parseLamp(resp)
                 if name == 'pjlink_ack':
                     return ProjectorScannerExt._parseAck(resp)
+                if name == 'escvp_val':
+                    return ProjectorScannerExt._parseEscvpVal(resp)
+                if name == 'escvp_ack':
+                    return ProjectorScannerExt._parseEscvpAck(resp)
                 return ProjectorScannerExt._parseInfo(resp)   # 'pjlink_text'
+
+            def txn(st):
+                tp = st.get('transport') or {'type': 'pjlink', 'port': port}
+                p = int(tp.get('port', port))
+                if tp.get('type') == 'esc_vp21':
+                    return ProjectorScannerExt._escVpTxn(ip, p, timeout_s, st['command'])
+                return ProjectorScannerExt._pjTxn(ip, p, timeout_s, st['command'], password)
+
             results = {}
-            with lock:  # serialize: PJLink permits only one connection at a time
+            with lock:  # serialize: one live connection at a time
                 try:
                     for i, st in enumerate(steps):
                         if i:
                             time.sleep(0.2)   # free the projector's slot between commands
-                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, st['command'], password)
+                        resp = txn(st)
                         val = parse(st.get('parse', 'pjlink_text'), resp)
                         if st.get('dest'):
                             results[st['dest']] = val
@@ -1509,6 +1551,19 @@ operators:
             hours = [toks[i] for i in range(0, len(toks), 2)]   # skip the on/off flags
             return '/'.join(hours) if hours else v
 
+        @staticmethod
+        def _parseEscvpVal(resp) -> str:
+            """ESC/VP21 query reply 'KEY=VALUE' -> VALUE; 'ERR' -> ''."""
+            r = (resp or '').strip()
+            if r.upper() == 'ERR':
+                return ''
+            return r.split('=', 1)[1].strip() if '=' in r else r
+
+        @staticmethod
+        def _parseEscvpAck(resp) -> str:
+            """ESC/VP21 command ack: bare prompt -> 'OK', 'ERR' -> 'ERR'."""
+            return 'ERR' if (resp or '').strip().upper() == 'ERR' else 'OK'
+
         # ---- drain: MAIN THREAD, once per frame while work is in flight ----------
 
         def pumpResults(self) -> None:
@@ -1556,6 +1611,12 @@ operators:
                 if token == 'lamp':
                     self._lamp[ip] = results.get('lamp') or self._lamp.get(ip) or '?'
                     self._storeInfo()
+                    continue
+                if token != 'power':
+                    bucket = self._actionResults.setdefault(ip, {})
+                    for k, v in results.items():
+                        if k != '_error':
+                            bucket[k] = v
                     continue
                 # token == 'power'
                 code = results.get('power')
