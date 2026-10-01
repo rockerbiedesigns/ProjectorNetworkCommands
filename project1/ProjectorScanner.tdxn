@@ -182,8 +182,11 @@ tags:
 - tdxn_exclude:Status
 comment: PJLink projector discovery
 storage:
+  info_class:
+    192.168.50.36: '1'
+    192.168.50.190: '1'
   info_lamp:
-    192.168.50.36: '13'
+    192.168.50.36: '14'
     192.168.50.190: '2535'
   info_maker:
     192.168.50.36: EPSON
@@ -607,6 +610,152 @@ operators:
   position: [200, -440]
   size: [130, 90]
   color: [0.67, 0.67, 0.67]
+- name: driver_manager
+  type: textDAT
+  position: [400, 200]
+  size: [130, 90]
+  comment: 'DriverManager: JSON driver loader + action resolver'
+  dat_content: |
+    """DriverManager -- device-agnostic driver/capability resolver.
+
+    Loads DECLARATIVE JSON driver definitions from a drivers/ tree (protocols,
+    vendors, models), matches a discovered projector to the best driver (most
+    specific match wins; generic PJLink is the fallback), merges 'extends'
+    inheritance, and resolves a normalized action (e.g. 'power.on') to a transport
+    command plus a PARSER NAME.
+
+    Declarative only: JSON never contains Python. The 'parse' field is a string key;
+    the actual parser functions live in Python (ProjectorScannerExt registers them)
+    and networking/transport stays in Python. This module touches NO TouchDesigner
+    objects, so it is safe to use from anywhere (including resolved-on-main-thread
+    before a worker runs).
+    """
+
+    from __future__ import annotations
+    import os
+    import json
+    import glob
+    from typing import Optional, List, Dict, Any
+
+
+    class DriverManager:
+        def __init__(self, drivers_dir: str) -> None:
+            self.drivers_dir = drivers_dir
+            self._drivers: Dict[str, Dict[str, Any]] = {}   # driver_id -> raw definition
+            self._errors: List[str] = []
+
+        # ---- loading ------------------------------------------------------------
+
+        def load(self) -> None:
+            """(Re)load every *.json driver from protocols/ vendors/ models/."""
+            self._drivers = {}
+            self._errors = []
+            for layer in ('protocols', 'vendors', 'models'):
+                folder = os.path.join(self.drivers_dir, layer)
+                if not os.path.isdir(folder):
+                    continue
+                for path in sorted(glob.glob(os.path.join(folder, '*.json'))):
+                    try:
+                        with open(path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                        did = data.get('driver_id')
+                        if not did:
+                            self._errors.append('%s: missing driver_id' % path)
+                            continue
+                        data['_source'] = path.replace('\\', '/')
+                        data['_layer'] = layer
+                        self._drivers[did] = data
+                    except Exception as e:
+                        self._errors.append('%s: %s' % (path, e))
+
+        @property
+        def errors(self) -> List[str]:
+            return list(self._errors)
+
+        def driver_ids(self) -> List[str]:
+            return sorted(self._drivers.keys())
+
+        # ---- normalization ------------------------------------------------------
+
+        @staticmethod
+        def normalize(s: Any) -> str:
+            """Lowercase, keep alphanumerics + space/-/ for loose contains-matching."""
+            return ''.join(c for c in str(s or '').lower()
+                           if c.isalnum() or c in ' -/').strip()
+
+        # ---- matching -----------------------------------------------------------
+
+        def match_driver(self, manufacturer: str = '', model: str = '') -> Optional[str]:
+            """Return the driver_id best matching the device; generic ('always':true)
+            is the lowest-priority fallback. Returns None only if no driver loaded."""
+            nm = self.normalize(manufacturer)
+            nmodel = self.normalize(model)
+            best_id, best_score = None, -1
+            for did, d in self._drivers.items():
+                score = self._match_score(d.get('match', {}), nm, nmodel)
+                if score > best_score:
+                    best_id, best_score = did, score
+            return best_id
+
+        def _match_score(self, match: Dict[str, Any], nm: str, nmodel: str) -> int:
+            """-1 = disqualified; higher = more specific. 'always' is the 0 floor."""
+            if not isinstance(match, dict) or not match:
+                return -1
+            score = 0 if match.get('always') else -1
+            mc = self.normalize(match.get('manufacturer_contains', ''))
+            if mc:
+                if mc in nm:
+                    score = max(score, 0) + 10
+                else:
+                    return -1
+            mdc = self.normalize(match.get('model_contains', ''))
+            if mdc:
+                if mdc in nmodel:
+                    score = max(score, 0) + 100
+                else:
+                    return -1
+            return score
+
+        # ---- inheritance merge --------------------------------------------------
+
+        def _resolved(self, driver_id: Optional[str], _seen=None) -> Dict[str, Any]:
+            """A driver with its 'extends' chain merged in (child overrides parent;
+            capabilities are deep-merged per action)."""
+            _seen = _seen or set()
+            if not driver_id or driver_id in _seen or driver_id not in self._drivers:
+                return {}
+            _seen.add(driver_id)
+            d = self._drivers[driver_id]
+            base = self._resolved(d.get('extends'), _seen)
+            merged = dict(base)
+            for k, v in d.items():
+                if k == 'capabilities':
+                    caps = dict(base.get('capabilities', {}))
+                    caps.update(v or {})
+                    merged['capabilities'] = caps
+                elif k in ('_source', '_layer'):
+                    continue
+                else:
+                    merged[k] = v
+            return merged
+
+        # ---- public resolver API ------------------------------------------------
+
+        def capabilities(self, driver_id: Optional[str]) -> List[str]:
+            """Sorted list of normalized actions the driver supports."""
+            return sorted(self._resolved(driver_id).get('capabilities', {}).keys())
+
+        def resolve_action(self, driver_id: Optional[str], action: str) -> Optional[Dict[str, Any]]:
+            """{'command', 'parse', 'confirm_with'?} for an action, or None if the
+            driver does not support it."""
+            return self._resolved(driver_id).get('capabilities', {}).get(action)
+
+        def transport(self, driver_id: Optional[str]) -> Dict[str, Any]:
+            return self._resolved(driver_id).get('transport', {})
+
+        def label(self, driver_id: Optional[str]) -> str:
+            return str(self._resolved(driver_id).get('label', driver_id or ''))
+  dat_content_format: text
 - name: tcpip1_callbacks
   type: textDAT
   parameters:
@@ -704,6 +853,8 @@ operators:
             self._lastLampRefresh: float = 0.0           # monotonic of last lamp-hours poll
             self._selected = set()                       # ips ticked for bulk on/off
             self._selGuard: Dict[str, float] = {}        # ip -> last select-toggle monotonic
+            self._pclass = dict(self.ownerComp.fetch('info_class', {}))  # ip -> PJLink class
+            self._drivers = None                         # DriverManager (lazy; see _ensureDrivers)
 
         # ---- lifecycle ----------------------------------------------------------
 
@@ -1006,11 +1157,13 @@ operators:
         # ---- power control public API -------------------------------------------
 
         def SetPower(self, ip: str, on: bool) -> None:
-            """Turn a projector on (True) or to standby (False), then confirm state."""
+            """Turn a projector on (True) or to standby (False). Resolves the
+            normalized action power.on/power.off to a command via the matched driver,
+            then confirms with power.get."""
             if self._scanning:
                 self._setStatus('A scan is in progress -- wait before controlling power.')
                 return
-            self._startPj(ip, '%1POWR 1' if on else '%1POWR 0', 'power')
+            self._runAction(ip, 'power.on' if on else 'power.off', 'power')
 
         def TogglePower(self, ip: str) -> None:
             """Toggle a projector. Turning OFF needs a confirm (click again within a
@@ -1053,22 +1206,23 @@ operators:
                 self._refreshIpDisplay()
 
         def QueryPower(self, ip: str) -> None:
-            """Ask a projector for its current power state (%1POWR ?)."""
+            """Ask a projector for its current power state (action power.get)."""
             if self._scanning:
                 return
-            self._startPj(ip, '%1POWR ?', 'query')
+            self._runAction(ip, 'power.get', 'power')
 
         def QueryInfo(self, ip: str) -> None:
-            """Fetch a projector's static info: manufacturer, model, name, lamp hours."""
+            """Fetch static info via normalized actions (manufacturer, model, name,
+            PJLink class, lamp hours), each command sourced from the matched driver."""
             if self._scanning:
                 return
-            self._startPj(ip, '', 'info')
+            self._runInfo(ip)
 
         def QueryLamp(self, ip: str) -> None:
-            """Refresh just the lamp-hour count (%1LAMP ?)."""
+            """Refresh just the lamp-hour count (action lamp.hours)."""
             if self._scanning:
                 return
-            self._startPj(ip, '%1LAMP ?', 'lamp')
+            self._runAction(ip, 'lamp.hours', 'lamp')
 
         def ToggleSelect(self, ip: str) -> None:
             """Tick / untick a projector's selection box. onSelect fires every frame
@@ -1124,6 +1278,57 @@ operators:
                 parts.append('%d cooling/warming skipped (%s)' % (len(trans), ', '.join(trans)))
             self._setStatus('; '.join(parts) + '.')
 
+        def _ensureDrivers(self):
+            """Lazily build the DriverManager from the driver_manager module DAT and
+            the on-disk drivers/ tree. Returns the instance or None if unavailable."""
+            if self._drivers is not None:
+                return self._drivers
+            try:
+                import os
+                mod = self.ownerComp.op('driver_manager')
+                if mod is None:
+                    return None
+                dm = mod.module.DriverManager(os.path.join(project.folder, 'drivers'))
+                dm.load()
+                self._drivers = dm
+                if dm.errors:
+                    debug('DriverManager load warnings:', dm.errors)
+            except Exception as e:
+                debug('DriverManager load failed:', e)
+                return None
+            return self._drivers
+
+        def _device(self, ip: str) -> Dict:
+            """Build the normalized device object for one projector from the current
+            per-field state plus its matched driver + capabilities."""
+            dm = self._ensureDrivers()
+            maker = self._maker.get(ip, '')
+            model = self._model.get(ip, '')
+            matched = dm.match_driver(maker, model) if dm else None
+            caps = dm.capabilities(matched) if dm else []
+            return {
+                'ip_address': ip,
+                'pjlink_name': self._name.get(ip, ''),
+                'manufacturer': maker,
+                'model': model,
+                'pjlink_class': self._pclass.get(ip, ''),
+                'power_state': self._power.get(ip, ''),
+                'lamp_hours': self._lamp.get(ip, ''),
+                'matched_driver': matched,
+                'capabilities': caps,
+            }
+
+        def Devices(self) -> List[Dict]:
+            """Normalized device object for every discovered projector (in list order)."""
+            proj = self.ownerComp.op('projectors')
+            out = []
+            if proj is not None:
+                for r in range(1, proj.numRows):
+                    ip = proj[r, 0].val
+                    if ip:
+                        out.append(self._device(ip))
+            return out
+
         def _autoRefresh(self) -> None:
             """Timer-driven: re-query every projector's power state so external power
             changes (switched off at the unit, another controller) appear in the UI."""
@@ -1144,15 +1349,67 @@ operators:
                 for ip in ips:
                     self.QueryLamp(ip)
 
-        def _startPj(self, ip: str, body: str, kind: str) -> None:
+        # ---- driver-resolved action execution -----------------------------------
+
+        def _driverFor(self, ip: str) -> Optional[str]:
+            """The driver_id matched to this projector (generic PJLink is fallback)."""
+            dm = self._ensureDrivers()
+            if dm is None:
+                return None
+            return dm.match_driver(self._maker.get(ip, ''), self._model.get(ip, '')) or 'protocol.pjlink'
+
+        def _stepFromSpec(self, spec, dest=None):
+            """Turn a resolved capability spec into one worker step, or None."""
+            if not spec or not spec.get('command'):
+                return None
+            return {'command': spec['command'], 'parse': spec.get('parse', 'pjlink_text'), 'dest': dest}
+
+        def _runAction(self, ip: str, action: str, token: str) -> None:
+            """Resolve a normalized action to its driver command(s) and run them on
+            the PJLink transport. A command action (power.on/off) auto-appends its
+            'confirm_with' query so power state refreshes afterwards."""
+            dm = self._ensureDrivers()
+            driver = self._driverFor(ip)
+            spec = dm.resolve_action(driver, action) if dm else None
+            if not spec or not spec.get('command'):
+                self._setStatus('Action "%s" not supported for %s.' % (action, ip))
+                return
+            if action.endswith(('.get', '.hours')):
+                steps = [self._stepFromSpec(spec, dest=token)]
+            else:
+                steps = [self._stepFromSpec(spec)]            # command (ack), no dest
+                cw = spec.get('confirm_with')
+                if cw:
+                    steps.append(self._stepFromSpec(dm.resolve_action(driver, cw), dest=token))
+            steps = [s for s in steps if s]
+            if steps:
+                self._startSteps(ip, steps, token)
+
+        def _runInfo(self, ip: str) -> None:
+            """Fetch all static info fields in ONE serialized connection sequence,
+            each command sourced from the matched driver."""
+            dm = self._ensureDrivers()
+            driver = self._driverFor(ip)
+            if dm is None:
+                self._setStatus('Driver system unavailable -- cannot query info.')
+                return
+            wanted = [('info.manufacturer', 'maker'), ('info.model', 'model'),
+                      ('info.name', 'name'), ('info.class', 'class'), ('lamp.hours', 'lamp')]
+            steps = [self._stepFromSpec(dm.resolve_action(driver, a), dest=d) for a, d in wanted]
+            steps = [s for s in steps if s]
+            if steps:
+                self._startSteps(ip, steps, 'info')
+
+        def _startSteps(self, ip: str, steps: List[Dict], token: str) -> None:
+            """Spawn the generic PJLink worker for a resolved list of steps."""
             port = int(self.ownerComp.par.Port.eval())
             pw = str(self.ownerComp.par.Password.eval())
             self._pjPending += 1
             self._pjBusyIps.add(ip)
             self._armDrain()
             t = threading.Thread(
-                target=ProjectorScannerExt._pjWorker,
-                args=(ip, port, 2.0, body, kind, pw, self._pjLock, self._powerResultQ),
+                target=ProjectorScannerExt._opWorker,
+                args=(ip, port, 2.0, list(steps), pw, self._pjLock, self._powerResultQ, token),
                 daemon=True)
             t.start()
             self._refreshIpDisplay()
@@ -1181,38 +1438,32 @@ operators:
                     pass
 
         @staticmethod
-        def _pjWorker(ip, port, timeout_s, body, kind, password, lock, outQ) -> None:
-            value = 'ERR'
+        def _opWorker(ip, port, timeout_s, steps, password, lock, outQ, token) -> None:
+            """Run a resolved list of {command, parse, dest} steps on the serialized
+            one-connection-at-a-time PJLink transport. Pure Python, NO TD access.
+            Puts (ip, token, results) where results maps each step's dest to its
+            parsed value ('_error': True on a transport failure)."""
+            def parse(name, resp):
+                if name == 'pjlink_power':
+                    return ProjectorScannerExt._parsePowr(resp)
+                if name == 'pjlink_lamp':
+                    return ProjectorScannerExt._parseLamp(resp)
+                if name == 'pjlink_ack':
+                    return ProjectorScannerExt._parseAck(resp)
+                return ProjectorScannerExt._parseInfo(resp)   # 'pjlink_text'
+            results = {}
             with lock:  # serialize: PJLink permits only one connection at a time
                 try:
-                    if kind == 'power':
-                        ProjectorScannerExt._pjTxn(ip, port, timeout_s, body, password)
-                        time.sleep(0.25)  # let the projector free its slot before re-query
-                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1POWR ?', password)
-                        value = ProjectorScannerExt._parsePowr(resp)
-                    elif kind == 'info':
-                        info = {}
-                        info['maker'] = ProjectorScannerExt._parseInfo(
-                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1INF1 ?', password))
-                        time.sleep(0.1)
-                        info['model'] = ProjectorScannerExt._parseInfo(
-                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1INF2 ?', password))
-                        time.sleep(0.1)
-                        info['name'] = ProjectorScannerExt._parseInfo(
-                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1NAME ?', password))
-                        time.sleep(0.1)
-                        info['lamp'] = ProjectorScannerExt._parseLamp(
-                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1LAMP ?', password))
-                        value = info
-                    elif kind == 'lamp':
-                        value = ProjectorScannerExt._parseLamp(
-                            ProjectorScannerExt._pjTxn(ip, port, timeout_s, '%1LAMP ?', password))
-                    else:
-                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, body, password)
-                        value = ProjectorScannerExt._parsePowr(resp)
+                    for i, st in enumerate(steps):
+                        if i:
+                            time.sleep(0.2)   # free the projector's slot between commands
+                        resp = ProjectorScannerExt._pjTxn(ip, port, timeout_s, st['command'], password)
+                        val = parse(st.get('parse', 'pjlink_text'), resp)
+                        if st.get('dest'):
+                            results[st['dest']] = val
                 except Exception:
-                    value = 'ERR'
-            outQ.put((ip, kind, value))
+                    results['_error'] = True
+            outQ.put((ip, token, results))
 
         @staticmethod
         def _parsePowr(resp) -> str:
@@ -1223,6 +1474,14 @@ operators:
                     return v
                 if v == 'OK':
                     return 'OK'
+            return 'ERR'
+
+        @staticmethod
+        def _parseAck(resp) -> str:
+            """A PJLink command ack: '=OK' -> 'OK', anything else -> 'ERR'."""
+            r = (resp or '').strip().upper()
+            if '=' in r and r.split('=', 1)[1].strip() == 'OK':
+                return 'OK'
             return 'ERR'
 
         @staticmethod
@@ -1280,33 +1539,32 @@ operators:
             drained = False
             while True:
                 try:
-                    ip, kind, value = self._powerResultQ.get_nowait()
+                    ip, token, results = self._powerResultQ.get_nowait()
                 except queue.Empty:
                     break
                 drained = True
                 self._pjPending = max(0, self._pjPending - 1)
                 self._pjBusyIps.discard(ip)
-                if kind == 'info':
-                    if isinstance(value, dict):
-                        self._maker[ip] = value.get('maker') or self._maker.get(ip) or '?'
-                        self._model[ip] = value.get('model') or self._model.get(ip) or '?'
-                        self._name[ip] = value.get('name') or self._name.get(ip) or '?'
-                        self._lamp[ip] = value.get('lamp') or self._lamp.get(ip) or '?'
-                        self._storeInfo()
-                    continue
-                if kind == 'lamp':
-                    self._lamp[ip] = value or self._lamp.get(ip) or '?'
+                if token == 'info':
+                    self._maker[ip] = results.get('maker') or self._maker.get(ip) or '?'
+                    self._model[ip] = results.get('model') or self._model.get(ip) or '?'
+                    self._name[ip] = results.get('name') or self._name.get(ip) or '?'
+                    self._pclass[ip] = results.get('class') or self._pclass.get(ip) or '?'
+                    self._lamp[ip] = results.get('lamp') or self._lamp.get(ip) or '?'
                     self._storeInfo()
                     continue
-                if value in ('0', '1', '2', '3'):
-                    self._power[ip] = value
-                elif value != 'OK':
+                if token == 'lamp':
+                    self._lamp[ip] = results.get('lamp') or self._lamp.get(ip) or '?'
+                    self._storeInfo()
+                    continue
+                # token == 'power'
+                code = results.get('power')
+                if code in ('0', '1', '2', '3'):
+                    self._power[ip] = code
+                    self._setStatus('Projector %s power: %s' % (ip, POWER_LABEL.get(code, '?')))
+                elif results.get('_error'):
                     self._power[ip] = 'ERR'
-                label = POWER_LABEL.get(self._power.get(ip, '?'), '?')
-                if value == 'ERR':
                     self._setStatus('Projector %s did not respond to power command.' % ip)
-                else:
-                    self._setStatus('Projector %s power: %s' % (ip, label))
                 # keep polling while the projector is transitioning (COOL/WARM)
                 if self._power.get(ip) in ('2', '3'):
                     cnt = self._pollCount.get(ip, 0)
@@ -1341,6 +1599,7 @@ operators:
             self.ownerComp.store('info_model', self._model)
             self.ownerComp.store('info_name', self._name)
             self.ownerComp.store('info_lamp', self._lamp)
+            self.ownerComp.store('info_class', self._pclass)
 
         def _refreshIpDisplay(self) -> None:
             """Mirror the projectors into the UI list source: column 0 = power label,

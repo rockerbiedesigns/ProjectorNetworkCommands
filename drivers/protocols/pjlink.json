@@ -1,0 +1,19 @@
+{
+  "driver_id": "protocol.pjlink",
+  "label": "Generic PJLink",
+  "protocol": "pjlink",
+  "extends": null,
+  "match": { "always": true },
+  "transport": { "type": "pjlink", "port": 4352, "terminator": "\r" },
+  "capabilities": {
+    "power.on":          { "command": "%1POWR 1", "parse": "pjlink_ack",   "confirm_with": "power.get" },
+    "power.off":         { "command": "%1POWR 0", "parse": "pjlink_ack",   "confirm_with": "power.get" },
+    "power.get":         { "command": "%1POWR ?", "parse": "pjlink_power" },
+    "input.get":         { "command": "%1INPT ?", "parse": "pjlink_text" },
+    "info.manufacturer": { "command": "%1INF1 ?", "parse": "pjlink_text" },
+    "info.model":        { "command": "%1INF2 ?", "parse": "pjlink_text" },
+    "info.name":         { "command": "%1NAME ?", "parse": "pjlink_text" },
+    "info.class":        { "command": "%1CLSS ?", "parse": "pjlink_text" },
+    "lamp.hours":        { "command": "%1LAMP ?", "parse": "pjlink_lamp" }
+  }
+}

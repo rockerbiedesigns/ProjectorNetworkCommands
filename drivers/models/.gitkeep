@@ -1,0 +1,4 @@
+# Model/family-specific driver definitions and overrides.
+# Each is a declarative JSON driver with "extends": "<vendor driver_id>" and a
+# more specific "match" (e.g. {"manufacturer_contains":"epson","model_contains":"eb-96w"}).
+# None yet.

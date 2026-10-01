@@ -1,0 +1,3 @@
+# Vendor-specific driver definitions (e.g. Epson ESC/VP21, Panasonic, Sony).
+# Each is a declarative JSON driver with "extends": "protocol.pjlink" and a
+# "match" block (e.g. {"manufacturer_contains": "epson"}). None yet.
