@@ -1,0 +1,24 @@
+{
+  "driver_id": "model.epson.eb410w",
+  "label": "Epson EB-410W / PowerLite 410W",
+  "protocol": "pjlink",
+  "tier": "model",
+  "extends": "vendor.epson",
+  "match": {
+    "manufacturer_contains": "epson",
+    "model_contains": "410w",
+    "model_aliases": ["eb-410w", "powerlite 410w"],
+    "pjlink_class": "1"
+  },
+  "capabilities": {
+    "power.get":   { "command": "%1POWR ?", "parse": "pjlink_power",
+                     "meta": { "provenance": "hardware_verified",
+                               "source": { "title": "Live read vs unit 192.168.50.190", "version": "2026-10-01" } } },
+    "input.get":   { "command": "SOURCE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+                     "meta": { "provenance": "hardware_verified", "decoded": "unknown",
+                               "source": { "title": "Live read vs unit 192.168.50.190 (SOURCE?=14; code meaning undocumented)", "version": "2026-10-01" } } },
+    "av.mute.get": { "command": "MUTE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+                     "meta": { "provenance": "hardware_verified",
+                               "source": { "title": "Live read vs unit 192.168.50.190 (MUTE?=OFF)", "version": "2026-10-01" } } }
+  }
+}

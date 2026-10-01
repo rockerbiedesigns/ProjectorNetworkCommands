@@ -1,0 +1,44 @@
+[
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "power.get",
+    "transport": "pjlink:4352",
+    "command": "%1POWR ?",
+    "raw": "%1POWR=1",
+    "result": "1 (ON)",
+    "timestamp": "2026-10-01T04:00:00Z",
+    "disposition": "read_only",
+    "tester": "session",
+    "notes": "Inherited PJLink power query confirmed live after the unit was powered on."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "input.get",
+    "transport": "esc_vp21:3629",
+    "command": "SOURCE?",
+    "raw": "SOURCE=14",
+    "result": "14 (source code; meaning undocumented -> decoded: unknown)",
+    "timestamp": "2026-10-01T04:00:00Z",
+    "disposition": "read_only",
+    "tester": "session",
+    "notes": "ESC/VP.net handshake + SOURCE? round-tripped live. Code 14 not decoded: EB-410W is absent from Epson's public ESC/VP21 applicable-models list and the SOURCE code table is in a non-public attachment."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "av.mute.get",
+    "transport": "esc_vp21:3629",
+    "command": "MUTE?",
+    "raw": "MUTE=OFF",
+    "result": "OFF",
+    "timestamp": "2026-10-01T04:00:00Z",
+    "disposition": "read_only",
+    "tester": "session",
+    "notes": "ESC/VP21 A/V mute state query confirmed live; picture showing."
+  }
+]

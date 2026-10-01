@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://projectorautomation.local/drivers/driver.schema.json",
+  "title": "Projector driver definition",
+  "description": "Declarative driver/capability definition. Data only -- there is no field anywhere in this schema that carries executable code. 'parse' is a string key into a fixed set of parser names implemented in Python; networking and parsing live in Python, never here. The DriverManager hand-rolls this same validation at load (no runtime dependency on a JSON-Schema library); this file is the human-readable contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["driver_id", "protocol"],
+  "properties": {
+    "driver_id": {
+      "type": "string",
+      "pattern": "^(protocol|vendor|family|model)\\.[A-Za-z0-9_.-]+$",
+      "description": "Unique id; the prefix names the tier and must match the folder it lives in."
+    },
+    "label": { "type": "string" },
+    "protocol": { "type": "string", "description": "Base wire protocol, e.g. 'pjlink'." },
+    "tier": { "type": "string", "enum": ["protocol", "vendor", "family", "model"] },
+    "extends": {
+      "type": ["string", "null"],
+      "description": "driver_id of the parent in the inheritance chain; must resolve to a loaded driver."
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How a discovered device is matched to this driver. Omitted/empty never matches (except a protocol with always:true).",
+      "properties": {
+        "always": { "type": "boolean", "description": "Lowest-priority fallback floor (generic PJLink)." },
+        "manufacturer_equals": { "type": "string" },
+        "manufacturer_contains": { "type": "string" },
+        "manufacturer_aliases": { "type": "array", "items": { "type": "string" } },
+        "model_equals": { "type": "string" },
+        "model_contains": { "type": "string" },
+        "model_prefix": { "type": "string", "description": "Family-level prefix match on the normalized model string." },
+        "model_aliases": { "type": "array", "items": { "type": "string" } },
+        "pjlink_class": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ],
+          "description": "Required PJLink class (e.g. '1' or ['1','2']). A known-but-different class disqualifies; an unknown class neither helps nor hurts."
+        },
+        "firmware_min": { "type": ["string", "null"] },
+        "firmware_max": { "type": ["string", "null"] },
+        "firmware_equals": { "type": ["string", "null"], "description": "Applied only when the device firmware is known." }
+      }
+    },
+    "transport": { "$ref": "#/definitions/transport" },
+    "capabilities": {
+      "type": "object",
+      "description": "Normalized action name -> capability definition.",
+      "additionalProperties": { "$ref": "#/definitions/capability" }
+    }
+  },
+  "definitions": {
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["pjlink", "esc_vp21"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "terminator": { "type": "string" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "parse"],
+      "properties": {
+        "command": { "type": "string", "description": "Literal protocol command string sent on the wire. Data, not code." },
+        "parse": {
+          "type": "string",
+          "enum": ["pjlink_power", "pjlink_lamp", "pjlink_ack", "pjlink_text", "escvp_val", "escvp_ack"],
+          "description": "Name of a parser implemented in Python. The schema enumerates the allowed names; it carries no parsing logic."
+        },
+        "confirm_with": { "type": ["string", "null"], "description": "Action to run after a command to refresh state (e.g. power.get)." },
+        "transport": { "$ref": "#/definitions/transport", "description": "Per-capability transport override; otherwise the driver default (possibly inherited) is used." },
+        "meta": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Provenance of this capability definition. Evidence itself lives in drivers/verification/, not here.",
+          "properties": {
+            "provenance": { "type": "string", "enum": ["documented", "hardware_verified"] },
+            "decoded": { "type": "string", "description": "Honesty flag, e.g. 'unknown' when a returned code's meaning is not established by documentation." },
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Reference only -- never a copy of manufacturer documentation text.",
+              "properties": {
+                "title": { "type": "string" },
+                "version": { "type": "string" },
+                "page": { "type": "string" },
+                "url": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 format: tdxn
 version: '2.1'
-build: 1
+build: 2
 generator: Embody/6.2.59
 td_build: 099.2025.32280
 network_path: /project1/ProjectorScanner
@@ -610,152 +610,6 @@ operators:
   position: [200, -440]
   size: [130, 90]
   color: [0.67, 0.67, 0.67]
-- name: driver_manager
-  type: textDAT
-  position: [400, 200]
-  size: [130, 90]
-  comment: 'DriverManager: JSON driver loader + action resolver'
-  dat_content: |
-    """DriverManager -- device-agnostic driver/capability resolver.
-
-    Loads DECLARATIVE JSON driver definitions from a drivers/ tree (protocols,
-    vendors, models), matches a discovered projector to the best driver (most
-    specific match wins; generic PJLink is the fallback), merges 'extends'
-    inheritance, and resolves a normalized action (e.g. 'power.on') to a transport
-    command plus a PARSER NAME.
-
-    Declarative only: JSON never contains Python. The 'parse' field is a string key;
-    the actual parser functions live in Python (ProjectorScannerExt registers them)
-    and networking/transport stays in Python. This module touches NO TouchDesigner
-    objects, so it is safe to use from anywhere (including resolved-on-main-thread
-    before a worker runs).
-    """
-
-    from __future__ import annotations
-    import os
-    import json
-    import glob
-    from typing import Optional, List, Dict, Any
-
-
-    class DriverManager:
-        def __init__(self, drivers_dir: str) -> None:
-            self.drivers_dir = drivers_dir
-            self._drivers: Dict[str, Dict[str, Any]] = {}   # driver_id -> raw definition
-            self._errors: List[str] = []
-
-        # ---- loading ------------------------------------------------------------
-
-        def load(self) -> None:
-            """(Re)load every *.json driver from protocols/ vendors/ models/."""
-            self._drivers = {}
-            self._errors = []
-            for layer in ('protocols', 'vendors', 'models'):
-                folder = os.path.join(self.drivers_dir, layer)
-                if not os.path.isdir(folder):
-                    continue
-                for path in sorted(glob.glob(os.path.join(folder, '*.json'))):
-                    try:
-                        with open(path, 'r', encoding='utf-8') as f:
-                            data = json.load(f)
-                        did = data.get('driver_id')
-                        if not did:
-                            self._errors.append('%s: missing driver_id' % path)
-                            continue
-                        data['_source'] = path.replace('\\', '/')
-                        data['_layer'] = layer
-                        self._drivers[did] = data
-                    except Exception as e:
-                        self._errors.append('%s: %s' % (path, e))
-
-        @property
-        def errors(self) -> List[str]:
-            return list(self._errors)
-
-        def driver_ids(self) -> List[str]:
-            return sorted(self._drivers.keys())
-
-        # ---- normalization ------------------------------------------------------
-
-        @staticmethod
-        def normalize(s: Any) -> str:
-            """Lowercase, keep alphanumerics + space/-/ for loose contains-matching."""
-            return ''.join(c for c in str(s or '').lower()
-                           if c.isalnum() or c in ' -/').strip()
-
-        # ---- matching -----------------------------------------------------------
-
-        def match_driver(self, manufacturer: str = '', model: str = '') -> Optional[str]:
-            """Return the driver_id best matching the device; generic ('always':true)
-            is the lowest-priority fallback. Returns None only if no driver loaded."""
-            nm = self.normalize(manufacturer)
-            nmodel = self.normalize(model)
-            best_id, best_score = None, -1
-            for did, d in self._drivers.items():
-                score = self._match_score(d.get('match', {}), nm, nmodel)
-                if score > best_score:
-                    best_id, best_score = did, score
-            return best_id
-
-        def _match_score(self, match: Dict[str, Any], nm: str, nmodel: str) -> int:
-            """-1 = disqualified; higher = more specific. 'always' is the 0 floor."""
-            if not isinstance(match, dict) or not match:
-                return -1
-            score = 0 if match.get('always') else -1
-            mc = self.normalize(match.get('manufacturer_contains', ''))
-            if mc:
-                if mc in nm:
-                    score = max(score, 0) + 10
-                else:
-                    return -1
-            mdc = self.normalize(match.get('model_contains', ''))
-            if mdc:
-                if mdc in nmodel:
-                    score = max(score, 0) + 100
-                else:
-                    return -1
-            return score
-
-        # ---- inheritance merge --------------------------------------------------
-
-        def _resolved(self, driver_id: Optional[str], _seen=None) -> Dict[str, Any]:
-            """A driver with its 'extends' chain merged in (child overrides parent;
-            capabilities are deep-merged per action)."""
-            _seen = _seen or set()
-            if not driver_id or driver_id in _seen or driver_id not in self._drivers:
-                return {}
-            _seen.add(driver_id)
-            d = self._drivers[driver_id]
-            base = self._resolved(d.get('extends'), _seen)
-            merged = dict(base)
-            for k, v in d.items():
-                if k == 'capabilities':
-                    caps = dict(base.get('capabilities', {}))
-                    caps.update(v or {})
-                    merged['capabilities'] = caps
-                elif k in ('_source', '_layer'):
-                    continue
-                else:
-                    merged[k] = v
-            return merged
-
-        # ---- public resolver API ------------------------------------------------
-
-        def capabilities(self, driver_id: Optional[str]) -> List[str]:
-            """Sorted list of normalized actions the driver supports."""
-            return sorted(self._resolved(driver_id).get('capabilities', {}).keys())
-
-        def resolve_action(self, driver_id: Optional[str], action: str) -> Optional[Dict[str, Any]]:
-            """{'command', 'parse', 'confirm_with'?} for an action, or None if the
-            driver does not support it."""
-            return self._resolved(driver_id).get('capabilities', {}).get(action)
-
-        def transport(self, driver_id: Optional[str]) -> Dict[str, Any]:
-            return self._resolved(driver_id).get('transport', {})
-
-        def label(self, driver_id: Optional[str]) -> str:
-            return str(self._resolved(driver_id).get('label', driver_id or ''))
-  dat_content_format: text
 - name: tcpip1_callbacks
   type: textDAT
   parameters:
@@ -1284,16 +1138,21 @@ operators:
             self._setStatus('; '.join(parts) + '.')
 
         def _ensureDrivers(self):
-            """Lazily build the DriverManager from the driver_manager module DAT and
-            the on-disk drivers/ tree. Returns the instance or None if unavailable."""
+            """Lazily build the DriverManager from drivers/driver_manager.py (the
+            single on-disk source of truth, imported by path so a headless test and
+            TD run the exact same code) over the on-disk drivers/ tree. Returns the
+            instance or None if unavailable."""
             if self._drivers is not None:
                 return self._drivers
             try:
                 import os
-                mod = self.ownerComp.op('driver_manager')
-                if mod is None:
-                    return None
-                dm = mod.module.DriverManager(os.path.join(project.folder, 'drivers'))
+                import importlib.util
+                ddir = os.path.join(project.folder, 'drivers')
+                modpath = os.path.join(ddir, 'driver_manager.py')
+                spec = importlib.util.spec_from_file_location('projscanner_driver_manager', modpath)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                dm = mod.DriverManager(ddir)
                 dm.load()
                 self._drivers = dm
                 if dm.errors:
@@ -1309,7 +1168,7 @@ operators:
             dm = self._ensureDrivers()
             maker = self._maker.get(ip, '')
             model = self._model.get(ip, '')
-            matched = dm.match_driver(maker, model) if dm else None
+            matched = dm.match_driver(maker, model, self._pclass.get(ip, '')) if dm else None
             caps = dm.capabilities(matched) if dm else []
             return {
                 'ip_address': ip,
@@ -1333,6 +1192,72 @@ operators:
                     if ip:
                         out.append(self._device(ip))
             return out
+
+        def ExplainDriver(self, ip: str) -> str:
+            """Report how the final driver for a projector was constructed: the
+            protocol -> vendor -> family -> model chain that matched, and for each
+            capability which driver supplied it, its transport, and its provenance.
+            Returns a printable string (also written to the textport via debug)."""
+            dm = self._ensureDrivers()
+            if dm is None:
+                return 'Driver system unavailable.'
+            maker = self._maker.get(ip, '')
+            model = self._model.get(ip, '')
+            pcls = self._pclass.get(ip, '')
+            text = ('Driver resolution for %s  (manufacturer=%r model=%r pjlink_class=%r)\n%s'
+                    % (ip, maker, model, pcls, dm.explain_text(maker, model, pcls)))
+            debug(text)
+            return text
+
+        def RecordVerification(self, ip: str, capability: str, result: str,
+                               disposition: str = 'read_only', raw: str = '',
+                               firmware: Optional[str] = None, notes: str = '') -> Optional[str]:
+            """Append a verification record (evidence) for a capability test to the
+            model's log under drivers/verification/. Evidence is kept SEPARATE from
+            the declarative command definitions. disposition is one of
+            read_only | reversible | disruptive. Returns the file path, or None."""
+            import os
+            import json as _json
+            import datetime
+            if disposition not in ('read_only', 'reversible', 'disruptive'):
+                self._setStatus('RecordVerification: disposition must be read_only/reversible/disruptive.')
+                return None
+            dm = self._ensureDrivers()
+            driver = self._driverFor(ip) or 'protocol.pjlink'
+            spec = (dm.resolve_action(driver, capability) or {}) if dm else {}
+            tp = spec.get('transport') or (dm.transport(driver) if dm else {})
+            entry = {
+                'driver_id': driver,
+                'model': self._model.get(ip, ''),
+                'firmware': firmware,
+                'capability': capability,
+                'transport': '%s:%s' % (tp.get('type', 'pjlink'), tp.get('port', '')),
+                'command': spec.get('command'),
+                'raw': raw,
+                'result': result,
+                'timestamp': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'disposition': disposition,
+                'tester': 'session',
+                'notes': notes,
+            }
+            try:
+                vdir = os.path.join(project.folder, 'drivers', 'verification')
+                os.makedirs(vdir, exist_ok=True)
+                base = driver.split('.', 1)[1] if '.' in driver else driver
+                path = os.path.join(vdir, base + '.json')
+                log = []
+                if os.path.isfile(path):
+                    with open(path, 'r', encoding='utf-8') as f:
+                        log = _json.load(f)
+                    if not isinstance(log, list):
+                        log = []
+                log.append(entry)
+                with open(path, 'w', encoding='utf-8') as f:
+                    _json.dump(log, f, indent=2)
+                return path.replace('\\', '/')
+            except Exception as e:
+                self._setStatus('RecordVerification failed: %s' % e)
+                return None
 
         def _autoRefresh(self) -> None:
             """Timer-driven: re-query every projector's power state so external power
@@ -1361,7 +1286,8 @@ operators:
             dm = self._ensureDrivers()
             if dm is None:
                 return None
-            return dm.match_driver(self._maker.get(ip, ''), self._model.get(ip, '')) or 'protocol.pjlink'
+            return dm.match_driver(self._maker.get(ip, ''), self._model.get(ip, ''),
+                                   self._pclass.get(ip, '')) or 'protocol.pjlink'
 
         def _stepFromSpec(self, spec, dest=None, transport=None):
             """Turn a resolved capability spec into one worker step, or None. The step
