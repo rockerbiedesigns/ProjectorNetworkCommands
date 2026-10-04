@@ -1,0 +1,15 @@
+{
+  "driver_id": "protocol.pjlink",
+  "label": "Generic PJLink (fixture)",
+  "protocol": "pjlink",
+  "tier": "protocol",
+  "extends": null,
+  "match": { "always": true },
+  "transport": { "type": "pjlink", "port": 4352 },
+  "capabilities": {
+    "power.on":  { "command": "%1POWR 1", "kind": "command", "parse": "pjlink_ack", "confirm_with": "power.get" },
+    "power.off": { "command": "%1POWR 0", "kind": "command", "parse": "pjlink_ack", "confirm_with": "power.get" },
+    "power.get": { "command": "%1POWR ?", "kind": "query", "parse": "pjlink_power" },
+    "input.get": { "command": "%1INPT ?", "kind": "query", "parse": "pjlink_text" }
+  }
+}

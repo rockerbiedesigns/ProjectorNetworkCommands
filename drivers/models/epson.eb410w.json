@@ -11,13 +11,13 @@
     "pjlink_class": "1"
   },
   "capabilities": {
-    "power.get":   { "command": "%1POWR ?", "parse": "pjlink_power",
+    "power.get":   { "command": "%1POWR ?", "kind": "query", "parse": "pjlink_power",
                      "meta": { "provenance": "hardware_verified",
                                "source": { "title": "Live read vs unit 192.168.50.190", "version": "2026-10-01" } } },
-    "input.get":   { "command": "SOURCE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+    "input.get":   { "command": "SOURCE?", "kind": "query", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "hardware_verified", "decoded": "unknown",
                                "source": { "title": "Live read vs unit 192.168.50.190 (SOURCE?=14; code meaning undocumented)", "version": "2026-10-01" } } },
-    "av.mute.get": { "command": "MUTE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+    "av.mute.get": { "command": "MUTE?", "kind": "query", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "hardware_verified",
                                "source": { "title": "Live read vs unit 192.168.50.190 (MUTE?=OFF)", "version": "2026-10-01" } } }
   }

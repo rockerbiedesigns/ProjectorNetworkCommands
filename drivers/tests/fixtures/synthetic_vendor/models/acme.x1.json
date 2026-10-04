@@ -1,0 +1,13 @@
+{
+  "driver_id": "model.acme.x1",
+  "label": "ACME X1 -- FICTIONAL TEST FIXTURE, not a real projector",
+  "protocol": "pjlink",
+  "tier": "model",
+  "extends": "vendor.acme",
+  "match": { "manufacturer_contains": "acme", "model_contains": "x1" },
+  "capabilities": {
+    "input.set": { "command": "SRC {value}", "kind": "set", "parse": "acme_ack",
+                   "transport": { "type": "acme_lan", "port": 5000 },
+                   "value_map": { "hdmi1": "H1", "hdmi2": "H2", "vga1": "V1", "sdi": "S1" } }
+  }
+}

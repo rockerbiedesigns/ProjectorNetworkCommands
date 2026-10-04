@@ -48,15 +48,25 @@ _MATCH_KEYS = {
     'model_equals', 'model_contains', 'model_prefix', 'model_aliases',
     'pjlink_class', 'firmware_min', 'firmware_max', 'firmware_equals',
 }
-_CAP_KEYS = {'command', 'parse', 'confirm_with', 'transport', 'meta'}
+_CAP_KEYS = {'command', 'kind', 'value_map', 'parse', 'confirm_with', 'transport', 'meta'}
+CAP_KINDS = {'query', 'command', 'set'}
 _TRANSPORT_KEYS = {'type', 'port', 'terminator'}
 _META_KEYS = {'provenance', 'decoded', 'source'}
 _SOURCE_KEYS = {'title', 'version', 'page', 'url'}
 
 
 class DriverManager:
-    def __init__(self, drivers_dir: str) -> None:
+    def __init__(self, drivers_dir: str,
+                 extra_parsers: Optional[set] = None,
+                 extra_transports: Optional[set] = None) -> None:
+        """extra_parsers / extra_transports let the composition root register a new
+        vendor's parser and transport NAMES without editing this file -- the base
+        sets cover the protocol baseline (PJLink) and Epson's ESC/VP21; a new
+        vendor adapter passes its names in. This is why adding a manufacturer never
+        touches the device-agnostic core."""
         self.drivers_dir = drivers_dir
+        self._parsers = set(KNOWN_PARSERS) | set(extra_parsers or ())
+        self._transports = set(KNOWN_TRANSPORTS) | set(extra_transports or ())
         self._drivers: Dict[str, Dict[str, Any]] = {}   # driver_id -> validated definition
         self._errors: List[str] = []
 
@@ -178,8 +188,8 @@ class DriverManager:
             if k not in _TRANSPORT_KEYS:
                 errs.append('%s: unknown key %r' % (where, k))
         typ = t.get('type')
-        if typ is not None and typ not in KNOWN_TRANSPORTS:
-            errs.append('%s.type %r not in %s' % (where, typ, sorted(KNOWN_TRANSPORTS)))
+        if typ is not None and typ not in self._transports:
+            errs.append('%s.type %r not in %s' % (where, typ, sorted(self._transports)))
         port = t.get('port')
         if port is not None and not (isinstance(port, int) and not isinstance(port, bool)
                                      and 1 <= port <= 65535):
@@ -197,14 +207,29 @@ class DriverManager:
         for k in spec:
             if k not in _CAP_KEYS:
                 errs.append('capability %r: unknown key %r' % (action, k))
-        if not isinstance(spec.get('command'), str) or not spec.get('command'):
+        command = spec.get('command')
+        if not isinstance(command, str) or not command:
             errs.append('capability %r: missing or non-string command' % action)
+            command = ''
         parse = spec.get('parse')
         if not isinstance(parse, str) or not parse:
             errs.append('capability %r: missing or non-string parse' % action)
-        elif parse not in KNOWN_PARSERS:
+        elif parse not in self._parsers:
             errs.append('capability %r: unknown parser %r (known: %s)'
-                        % (action, parse, sorted(KNOWN_PARSERS)))
+                        % (action, parse, sorted(self._parsers)))
+        kind = spec.get('kind')
+        if kind is not None and kind not in CAP_KINDS:
+            errs.append('capability %r: kind %r not in %s' % (action, kind, sorted(CAP_KINDS)))
+        vm = spec.get('value_map')
+        if vm is not None and not (isinstance(vm, dict)
+                                   and all(isinstance(k, str) and isinstance(v, str)
+                                           for k, v in vm.items())):
+            errs.append('capability %r: value_map must be an object of string->string' % action)
+        if kind == 'set' and vm is None and '{value}' not in command:
+            errs.append("capability %r: a 'set' capability needs a value_map or a "
+                        "'{value}' placeholder in its command" % action)
+        if vm is not None and kind not in (None, 'set'):
+            errs.append("capability %r: value_map is only valid for kind 'set'" % action)
         cw = spec.get('confirm_with')
         if 'confirm_with' in spec and cw is not None and not isinstance(cw, str):
             errs.append('capability %r: confirm_with must be a string or null' % action)
@@ -413,9 +438,57 @@ class DriverManager:
         return sorted(self._resolved(driver_id).get('capabilities', {}).keys())
 
     def resolve_action(self, driver_id: Optional[str], action: str) -> Optional[Dict[str, Any]]:
-        """The merged capability spec ({command, parse, confirm_with?, transport?,
-        meta?}) for an action, or None if the driver does not support it."""
+        """The merged capability spec ({command, kind?, value_map?, parse,
+        confirm_with?, transport?, meta?}) for an action, or None if the driver
+        does not support it."""
         return self._resolved(driver_id).get('capabilities', {}).get(action)
+
+    @staticmethod
+    def capability_kind(action: str, spec: Optional[Dict[str, Any]]) -> str:
+        """'query' | 'command' | 'set'. Prefer the declared 'kind'; otherwise infer
+        it from the action name. This is the ONE place the old name-suffix heuristic
+        lives, so callers (and the TD extension, once it is wired here) stop guessing
+        it themselves."""
+        if spec and spec.get('kind') in CAP_KINDS:
+            return str(spec['kind'])
+        if spec and ('value_map' in spec or '{value}' in str(spec.get('command', ''))):
+            return 'set'
+        if action.endswith(('.get', '.hours', '.query', '.list', '.status')):
+            return 'query'
+        if action.endswith('.set'):
+            return 'set'
+        return 'command'
+
+    def resolve_set(self, driver_id: Optional[str], action: str,
+                    value: str) -> Optional[Dict[str, Any]]:
+        """Resolve a parameterized 'set' action for a concrete value into a ready-to-
+        send spec: the {value} placeholder is substituted with the value_map token
+        (or the raw value when no value_map is defined). Returns None when the action
+        is absent, is not a 'set', or the value is not in a defined value_map (an
+        unknown value is refused, never sent blindly). The returned spec is a copy;
+        the stored definition is never mutated."""
+        spec = self.resolve_action(driver_id, action)
+        if not spec or self.capability_kind(action, spec) != 'set':
+            return None
+        vm = spec.get('value_map')
+        if vm is not None:
+            if value not in vm:
+                return None
+            token = vm[value]
+        else:
+            token = str(value)
+        out = dict(spec)
+        out['command'] = str(spec.get('command', '')).replace('{value}', token)
+        out['resolved_value'] = value
+        return out
+
+    def set_values(self, driver_id: Optional[str], action: str) -> List[str]:
+        """The accepted normalized values for a 'set' action (its value_map keys),
+        or [] when the action takes a free/raw value or is not a 'set'."""
+        spec = self.resolve_action(driver_id, action)
+        if not spec or self.capability_kind(action, spec) != 'set':
+            return []
+        return sorted((spec.get('value_map') or {}).keys())
 
     def transport(self, driver_id: Optional[str]) -> Dict[str, Any]:
         return self._resolved(driver_id).get('transport', {})

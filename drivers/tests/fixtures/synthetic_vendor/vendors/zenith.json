@@ -1,0 +1,12 @@
+{
+  "driver_id": "vendor.zenith",
+  "label": "ZENITH -- FICTIONAL TEST FIXTURE, not a real projector",
+  "protocol": "pjlink",
+  "tier": "vendor",
+  "extends": "protocol.pjlink",
+  "match": { "manufacturer_contains": "zenith" },
+  "capabilities": {
+    "input.get": { "command": "GETSRC", "kind": "query", "parse": "zenith_txt",
+                   "transport": { "type": "zenith_tcp", "port": 6000 } }
+  }
+}

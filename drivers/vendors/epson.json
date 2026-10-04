@@ -6,16 +6,16 @@
   "extends": "protocol.pjlink",
   "match": { "manufacturer_contains": "epson" },
   "capabilities": {
-    "input.get":   { "command": "SOURCE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+    "input.get":   { "command": "SOURCE?", "kind": "query", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "documented", "decoded": "unknown",
                                "source": { "title": "Epson ESC/VP21 Command User's Guide for Business Projectors", "version": "Rev. N (2010-03-11)" } } },
-    "av.mute.get": { "command": "MUTE?", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
+    "av.mute.get": { "command": "MUTE?", "kind": "query", "parse": "escvp_val", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "documented",
                                "source": { "title": "Epson ESC/VP21 Command User's Guide for Business Projectors", "version": "Rev. N (2010-03-11)" } } },
-    "av.mute.on":  { "command": "MUTE ON", "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 },
+    "av.mute.on":  { "command": "MUTE ON", "kind": "command", "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "documented",
                                "source": { "title": "Epson ESC/VP21 Command User's Guide for Business Projectors", "version": "Rev. N (2010-03-11)" } } },
-    "av.mute.off": { "command": "MUTE OFF", "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 },
+    "av.mute.off": { "command": "MUTE OFF", "kind": "command", "parse": "escvp_ack", "transport": { "type": "esc_vp21", "port": 3629 },
                      "meta": { "provenance": "documented",
                                "source": { "title": "Epson ESC/VP21 Command User's Guide for Business Projectors", "version": "Rev. N (2010-03-11)" } } }
   }

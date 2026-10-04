@@ -66,7 +66,17 @@
       "additionalProperties": false,
       "required": ["command", "parse"],
       "properties": {
-        "command": { "type": "string", "description": "Literal protocol command string sent on the wire. Data, not code." },
+        "command": { "type": "string", "description": "Literal protocol command string sent on the wire. Data, not code. A 'set' capability may contain a single '{value}' placeholder, substituted at resolve time." },
+        "kind": {
+          "type": "string",
+          "enum": ["query", "command", "set"],
+          "description": "What the action does: 'query' reads state (expects a parsed value back), 'command' changes state with no argument, 'set' is parameterized (takes a value). Optional for back-compat; when absent the manager infers it from the action name, but declaring it is preferred."
+        },
+        "value_map": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Only for kind:'set'. Maps a NORMALIZED value (e.g. 'hdmi1') to the wire token substituted into the command's {value} placeholder (e.g. '30'). When omitted, the caller's raw value is substituted directly (for numeric params like brightness). An unknown value is rejected rather than sent."
+        },
         "parse": {
           "type": "string",
           "enum": ["pjlink_power", "pjlink_lamp", "pjlink_ack", "pjlink_text", "escvp_val", "escvp_ack"],

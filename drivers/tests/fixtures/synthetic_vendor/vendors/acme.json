@@ -1,0 +1,17 @@
+{
+  "driver_id": "vendor.acme",
+  "label": "ACME -- FICTIONAL TEST FIXTURE, not a real projector",
+  "protocol": "pjlink",
+  "tier": "vendor",
+  "extends": "protocol.pjlink",
+  "match": { "manufacturer_contains": "acme" },
+  "capabilities": {
+    "input.get":  { "command": "SRC?", "kind": "query", "parse": "acme_val",
+                    "transport": { "type": "acme_lan", "port": 5000 } },
+    "input.set":  { "command": "SRC {value}", "kind": "set", "parse": "acme_ack",
+                    "transport": { "type": "acme_lan", "port": 5000 },
+                    "value_map": { "hdmi1": "H1", "hdmi2": "H2", "vga1": "V1" } },
+    "av.mute.on": { "command": "BLANK ON", "kind": "command", "parse": "acme_ack",
+                    "transport": { "type": "acme_lan", "port": 5000 } }
+  }
+}
