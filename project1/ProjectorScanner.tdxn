@@ -1,6 +1,6 @@
 format: tdxn
 version: '2.1'
-build: 2
+build: 3
 generator: Embody/6.2.59
 td_build: 099.2025.32280
 network_path: /project1/ProjectorScanner
@@ -648,7 +648,6 @@ operators:
     import threading
     import queue
     import time
-    import hashlib
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from typing import Optional, List, Dict
 
@@ -676,7 +675,12 @@ operators:
         as serialized background-socket transactions (one shared lock => one live
         connection ever) and report back through the same main-thread drain. The
         TCP/IP DAT is deliberately NOT used here: its frame-delayed callbacks and
-        auto-reconnect churn the projector's single connection slot."""
+        auto-reconnect churn the projector's single connection slot.
+
+        The wire protocols themselves live in pure modules drivers/transports.py
+        (socket transactions) and drivers/parsers.py (reply parsers), loaded by path
+        in _ensureDrivers and dispatched by name in the worker -- no protocol code
+        lives in this extension, so a new vendor's adapter never touches it."""
 
         def __init__(self, ownerComp: COMP) -> None:
             self.ownerComp = ownerComp
@@ -709,6 +713,8 @@ operators:
             self._selGuard: Dict[str, float] = {}        # ip -> last select-toggle monotonic
             self._pclass = dict(self.ownerComp.fetch('info_class', {}))  # ip -> PJLink class
             self._drivers = None                         # DriverManager (lazy; see _ensureDrivers)
+            self._parserFns: Dict = {}                   # parse name -> callable (from drivers/parsers.py)
+            self._transportFns: Dict = {}                # transport type -> callable (from drivers/transports.py)
             self._actionResults: Dict[str, Dict] = {}    # ip -> {dest: value} for generic actions
 
         # ---- lifecycle ----------------------------------------------------------
@@ -1138,21 +1144,32 @@ operators:
             self._setStatus('; '.join(parts) + '.')
 
         def _ensureDrivers(self):
-            """Lazily build the DriverManager from drivers/driver_manager.py (the
-            single on-disk source of truth, imported by path so a headless test and
-            TD run the exact same code) over the on-disk drivers/ tree. Returns the
-            instance or None if unavailable."""
+            """Lazily build the DriverManager plus the transport/parser registries from
+            the on-disk drivers/ tree (the single source of truth, imported by path so a
+            headless test and TD run the exact same code). The parser/transport NAMES
+            are injected into DriverManager, so adding a vendor's adapter in those pure
+            modules needs no edit here. Returns the instance or None if unavailable."""
             if self._drivers is not None:
                 return self._drivers
             try:
                 import os
                 import importlib.util
                 ddir = os.path.join(project.folder, 'drivers')
-                modpath = os.path.join(ddir, 'driver_manager.py')
-                spec = importlib.util.spec_from_file_location('projscanner_driver_manager', modpath)
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                dm = mod.DriverManager(ddir)
+
+                def _loadmod(name):
+                    p = os.path.join(ddir, name + '.py')
+                    sp = importlib.util.spec_from_file_location('projscanner_' + name, p)
+                    m = importlib.util.module_from_spec(sp)
+                    sp.loader.exec_module(m)
+                    return m
+                mod = _loadmod('driver_manager')
+                self._parsers = _loadmod('parsers')
+                self._transports = _loadmod('transports')
+                self._parserFns = dict(self._parsers.REGISTRY)
+                self._transportFns = dict(self._transports.REGISTRY)
+                dm = mod.DriverManager(ddir,
+                                       extra_parsers=self._parsers.names(),
+                                       extra_transports=self._transports.names())
                 dm.load()
                 self._drivers = dm
                 if dm.errors:
@@ -1337,7 +1354,10 @@ operators:
                 self._startSteps(ip, steps, 'info')
 
         def _startSteps(self, ip: str, steps: List[Dict], token: str) -> None:
-            """Spawn the generic PJLink worker for a resolved list of steps."""
+            """Spawn the generic PJLink worker for a resolved list of steps. The parser
+            and transport callables are resolved on the main thread (via _ensureDrivers)
+            and passed in, so the worker stays pure (no TD, no disk)."""
+            self._ensureDrivers()                        # make sure the fn registries are built
             port = int(self.ownerComp.par.Port.eval())
             pw = str(self.ownerComp.par.Password.eval())
             self._pjPending += 1
@@ -1345,79 +1365,33 @@ operators:
             self._armDrain()
             t = threading.Thread(
                 target=ProjectorScannerExt._opWorker,
-                args=(ip, port, 2.0, list(steps), pw, self._pjLock, self._powerResultQ, token),
+                args=(ip, port, 2.0, list(steps), pw, self._pjLock, self._powerResultQ, token,
+                      dict(self._parserFns), dict(self._transportFns)),
                 daemon=True)
             t.start()
             self._refreshIpDisplay()
             self._updateUiState()
 
-        # ---- power workers: NO TouchDesigner access whatsoever ------------------
+        # ---- power worker: NO TouchDesigner access whatsoever -------------------
 
         @staticmethod
-        def _pjTxn(ip, port, timeout_s, cmd, password) -> str:
-            """One PJLink request/response on its own short-lived connection."""
-            s = socket.create_connection((ip, port), timeout=timeout_s)
-            try:
-                s.settimeout(timeout_s)
-                banner = s.recv(64).decode('ascii', 'replace').strip()
-                prefix = ''
-                parts = banner.split()
-                if banner.upper().startswith('PJLINK') and len(parts) >= 2 and parts[1] == '1':
-                    seed = parts[2] if len(parts) >= 3 else ''
-                    prefix = hashlib.md5((seed + password).encode('ascii', 'ignore')).hexdigest()
-                s.sendall((prefix + cmd + '\r').encode('ascii', 'ignore'))
-                return s.recv(64).decode('ascii', 'replace').strip()
-            finally:
-                try:
-                    s.close()
-                except Exception:
-                    pass
-
-        @staticmethod
-        def _escVpTxn(ip, port, timeout_s, cmd) -> str:
-            """One Epson ESC/VP.net request/response: the 16-byte handshake, then a
-            text command terminated with CR. Returns the reply with its trailing ':'
-            prompt and CR stripped ('' for a bare ack, 'ERR' on failure)."""
-            s = socket.create_connection((ip, port), timeout=timeout_s)
-            try:
-                s.settimeout(timeout_s)
-                s.sendall(b'ESC/VP.net' + bytes([0x10, 0x03, 0x00, 0x00, 0x00, 0x00]))
-                if not s.recv(16).startswith(b'ESC/VP.net'):
-                    return 'ERR'
-                s.sendall((cmd + '\r').encode('ascii', 'ignore'))
-                raw = s.recv(64).decode('ascii', 'replace')
-                return raw.replace('\r', '').replace(':', '').strip()
-            finally:
-                try:
-                    s.close()
-                except Exception:
-                    pass
-
-        @staticmethod
-        def _opWorker(ip, port, timeout_s, steps, password, lock, outQ, token) -> None:
+        def _opWorker(ip, port, timeout_s, steps, password, lock, outQ, token,
+                      parserFns, transportFns) -> None:
             """Run a resolved list of {command, parse, dest} steps on the serialized
-            one-connection-at-a-time PJLink transport. Pure Python, NO TD access.
-            Puts (ip, token, results) where results maps each step's dest to its
-            parsed value ('_error': True on a transport failure)."""
+            one-connection-at-a-time transport. Pure Python, NO TD access. Parser and
+            transport callables are passed in (from drivers/parsers.py & transports.py)
+            and dispatched by name -- no protocol code lives here. Puts (ip, token,
+            results) mapping each step's dest to its parsed value ('_error': True on a
+            transport failure)."""
             def parse(name, resp):
-                if name == 'pjlink_power':
-                    return ProjectorScannerExt._parsePowr(resp)
-                if name == 'pjlink_lamp':
-                    return ProjectorScannerExt._parseLamp(resp)
-                if name == 'pjlink_ack':
-                    return ProjectorScannerExt._parseAck(resp)
-                if name == 'escvp_val':
-                    return ProjectorScannerExt._parseEscvpVal(resp)
-                if name == 'escvp_ack':
-                    return ProjectorScannerExt._parseEscvpAck(resp)
-                return ProjectorScannerExt._parseInfo(resp)   # 'pjlink_text'
+                fn = parserFns.get(name) or parserFns.get('pjlink_text')
+                return fn(resp) if fn else resp
 
             def txn(st):
                 tp = st.get('transport') or {'type': 'pjlink', 'port': port}
                 p = int(tp.get('port', port))
-                if tp.get('type') == 'esc_vp21':
-                    return ProjectorScannerExt._escVpTxn(ip, p, timeout_s, st['command'])
-                return ProjectorScannerExt._pjTxn(ip, p, timeout_s, st['command'], password)
+                fn = transportFns.get(tp.get('type')) or transportFns.get('pjlink')
+                return fn(ip, p, timeout_s, st['command'], {'password': password})
 
             results = {}
             with lock:  # serialize: one live connection at a time
@@ -1432,63 +1406,6 @@ operators:
                 except Exception:
                     results['_error'] = True
             outQ.put((ip, token, results))
-
-        @staticmethod
-        def _parsePowr(resp) -> str:
-            r = (resp or '').strip().upper()
-            if '=' in r:
-                v = r.split('=', 1)[1].strip()
-                if v in ('0', '1', '2', '3'):
-                    return v
-                if v == 'OK':
-                    return 'OK'
-            return 'ERR'
-
-        @staticmethod
-        def _parseAck(resp) -> str:
-            """A PJLink command ack: '=OK' -> 'OK', anything else -> 'ERR'."""
-            r = (resp or '').strip().upper()
-            if '=' in r and r.split('=', 1)[1].strip() == 'OK':
-                return 'OK'
-            return 'ERR'
-
-        @staticmethod
-        def _parseInfo(resp) -> str:
-            """Parse a PJLink info reply (e.g. %1INF2=EB-2250U) to its text value."""
-            r = (resp or '').strip()
-            if '=' in r:
-                v = r.split('=', 1)[1].strip()
-                if v.upper() in ('ERR1', 'ERR2', 'ERR3', 'ERR4', 'ERRA'):
-                    return ''
-                return v
-            return ''
-
-        @staticmethod
-        def _parseLamp(resp) -> str:
-            """Parse a PJLink %1LAMP reply ('hours on/off [hours on/off ...]') to the
-            cumulative lamp hour count(s): '8262', or '8262/13' for a two-lamp unit."""
-            r = (resp or '').strip()
-            if '=' not in r:
-                return ''
-            v = r.split('=', 1)[1].strip()
-            if v.upper() in ('ERR1', 'ERR2', 'ERR3', 'ERR4', 'ERRA'):
-                return ''
-            toks = v.split()
-            hours = [toks[i] for i in range(0, len(toks), 2)]   # skip the on/off flags
-            return '/'.join(hours) if hours else v
-
-        @staticmethod
-        def _parseEscvpVal(resp) -> str:
-            """ESC/VP21 query reply 'KEY=VALUE' -> VALUE; 'ERR' -> ''."""
-            r = (resp or '').strip()
-            if r.upper() == 'ERR':
-                return ''
-            return r.split('=', 1)[1].strip() if '=' in r else r
-
-        @staticmethod
-        def _parseEscvpAck(resp) -> str:
-            """ESC/VP21 command ack: bare prompt -> 'OK', 'ERR' -> 'ERR'."""
-            return 'ERR' if (resp or '').strip().upper() == 'ERR' else 'OK'
 
         # ---- drain: MAIN THREAD, once per frame while work is in flight ----------
 
