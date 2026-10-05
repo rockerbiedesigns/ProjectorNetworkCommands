@@ -1,6 +1,6 @@
 format: tdxn
 version: '2.1'
-build: 3
+build: 4
 generator: Embody/6.2.59
 td_build: 099.2025.32280
 network_path: /project1/ProjectorScanner
@@ -187,7 +187,7 @@ storage:
     192.168.50.190: '1'
   info_lamp:
     192.168.50.36: '14'
-    192.168.50.190: '2535'
+    192.168.50.190: '2536'
   info_maker:
     192.168.50.36: EPSON
     192.168.50.190: EPSON
@@ -1089,6 +1089,15 @@ operators:
                 return
             self._runAction(ip, 'lamp.hours', 'lamp')
 
+        def SetInput(self, ip: str, value: str) -> None:
+            """Switch a projector to a normalized input (e.g. 'vga1', 'hdmi1'). The
+            vendor wire code comes from the matched driver's input.set value_map;
+            an unknown value is refused with the list of supported options."""
+            if self._scanning:
+                self._setStatus('A scan is in progress -- please wait.')
+                return
+            self._runSet(ip, 'input.set', value, 'src')
+
         def ToggleSelect(self, ip: str) -> None:
             """Tick / untick a projector's selection box. onSelect fires every frame
             while the mouse is held, so debounce to one flip per click -- otherwise
@@ -1333,6 +1342,29 @@ operators:
                 cw = spec.get('confirm_with')
                 if cw:
                     steps.append(self._stepFromSpec(dm.resolve_action(driver, cw), dest=token, transport=dt))
+            steps = [s for s in steps if s]
+            if steps:
+                self._startSteps(ip, steps, token)
+
+        def _runSet(self, ip: str, action: str, value: str, token: str) -> None:
+            """Resolve a parameterized 'set' action (e.g. input.set) for a concrete
+            normalized value into a substituted command via the matched driver, send
+            it, then confirm by reading the matching '.get'. An unsupported value is
+            reported with the allowed options and nothing is sent."""
+            dm = self._ensureDrivers()
+            driver = self._driverFor(ip)
+            spec = dm.resolve_set(driver, action, value) if dm else None
+            if not spec:
+                allowed = dm.set_values(driver, action) if dm else []
+                self._setStatus('Value "%s" not supported for %s on %s. Options: %s'
+                                % (value, action, ip, ', '.join(allowed) or '(none)'))
+                return
+            dt = dm.transport(driver)
+            steps = [self._stepFromSpec(spec, transport=dt)]            # the SET command (ack)
+            getter = action.rsplit('.', 1)[0] + '.get'                 # input.set -> input.get
+            gspec = dm.resolve_action(driver, getter)
+            if gspec:
+                steps.append(self._stepFromSpec(gspec, dest=token, transport=dt))
             steps = [s for s in steps if s]
             if steps:
                 self._startSteps(ip, steps, token)

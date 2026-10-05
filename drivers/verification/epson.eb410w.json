@@ -124,5 +124,61 @@
     "disposition": "reversible",
     "tester": "session",
     "notes": "Live ESC/VP21 test while ON: picture restored, MUTE? then read OFF."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "input.set",
+    "transport": "esc_vp21:3629",
+    "command": "SOURCE {value}",
+    "raw": "SOURCE 14",
+    "result": "vga1 -> SOURCE 14; SOURCE? read back 14 (Computer1)",
+    "timestamp": "2026-10-05T05:45:48Z",
+    "disposition": "reversible",
+    "tester": "session",
+    "notes": "Live set+readback via input.set value_map (2026-10-05); each code set and confirmed by SOURCE?."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "input.set",
+    "transport": "esc_vp21:3629",
+    "command": "SOURCE {value}",
+    "raw": "SOURCE 21",
+    "result": "vga2 -> SOURCE 21; SOURCE? read back 21 (Computer2)",
+    "timestamp": "2026-10-05T05:45:48Z",
+    "disposition": "reversible",
+    "tester": "session",
+    "notes": "Live set+readback via input.set value_map (2026-10-05); each code set and confirmed by SOURCE?."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "input.set",
+    "transport": "esc_vp21:3629",
+    "command": "SOURCE {value}",
+    "raw": "SOURCE 42",
+    "result": "svideo -> SOURCE 42; SOURCE? read back 42 (S-Video)",
+    "timestamp": "2026-10-05T05:45:48Z",
+    "disposition": "reversible",
+    "tester": "session",
+    "notes": "Live set+readback via input.set value_map (2026-10-05); each code set and confirmed by SOURCE?."
+  },
+  {
+    "driver_id": "model.epson.eb410w",
+    "model": "EB-410W/PowerLite 410W",
+    "firmware": null,
+    "capability": "input.set",
+    "transport": "esc_vp21:3629",
+    "command": "SOURCE {value}",
+    "raw": "SOURCE 41",
+    "result": "composite -> SOURCE 41; SOURCE? read back 41 (Video/Composite)",
+    "timestamp": "2026-10-05T05:45:48Z",
+    "disposition": "reversible",
+    "tester": "session",
+    "notes": "Live set+readback via input.set value_map (2026-10-05); each code set and confirmed by SOURCE?."
   }
 ]

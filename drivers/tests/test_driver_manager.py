@@ -313,6 +313,19 @@ class RealTreeTest(unittest.TestCase):
         d = self.dm()
         self.assertNotIn('input.set.hdmi1', d.capabilities('model.epson.eb410w'))
 
+    def test_real_eb410w_input_set_value_map(self):
+        # hardware-verified SOURCE code map (live set+readback, 2026-10-05):
+        # vendor-neutral name -> wire code, substituted into 'SOURCE {value}'.
+        d = self.dm()
+        drv = 'model.epson.eb410w'
+        self.assertEqual(sorted(d.set_values(drv, 'input.set')),
+                         ['composite', 'svideo', 'vga1', 'vga2'])
+        self.assertEqual(d.resolve_set(drv, 'input.set', 'vga1')['command'], 'SOURCE 14')
+        self.assertEqual(d.resolve_set(drv, 'input.set', 'vga2')['command'], 'SOURCE 21')
+        self.assertEqual(d.resolve_set(drv, 'input.set', 'svideo')['command'], 'SOURCE 42')
+        self.assertEqual(d.resolve_set(drv, 'input.set', 'composite')['command'], 'SOURCE 41')
+        self.assertIsNone(d.resolve_set(drv, 'input.set', 'hdmi1'))   # this unit has no HDMI
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
